@@ -1,22 +1,31 @@
 #!/bin/bash
 
-# Check if ROS distribution is provided
 if [ -z "$1" ]; then
     echo "Usage: $0 <ros2_distro>"
-    echo "Supported distributions: foxy, galactic, humble, iron, jazzy, rolling"
     exit 1
 fi
 
 ROS_DISTRO=$1
 IMAGE_NAME="ur_ros2_${ROS_DISTRO}"
 CONTAINER_NAME="ur_ros2_dev_${ROS_DISTRO}"
-WORKSPACE_DIR=$(pwd)
+
+# Get absolute paths
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+WORKSPACE_DIR="$(dirname "$SCRIPT_DIR")"
+
+# Debug output
+echo "--------------------------------------------------"
+echo "Mounting configuration:"
+echo "Host workspace: $WORKSPACE_DIR"
+echo "Mounting host src/ur_pick_and_place → container /root/ur_ws/src/ur_pick_and_place"
+echo "Preserving container's /root/ur_ws/src/Universal_Robots_ROS2_Driver"
+echo "--------------------------------------------------"
 
 # X11 configuration
 XSOCK="/tmp/.X11-unix"
 XAUTH="/tmp/.docker.xauth"
 
-# Create Xauthority file
+# Create Xauthority
 touch "$XAUTH"
 xauth nlist "$DISPLAY" | sed -e 's/^..../ffff/' | xauth -f "$XAUTH" nmerge -
 
@@ -35,7 +44,6 @@ fi
 echo "Starting ROS2 ${ROS_DISTRO} container..."
 echo "Press Ctrl+D or type 'exit' to stop the container."
 
-# Run Docker container
 docker run -it --rm \
     --name "${CONTAINER_NAME}" \
     --env="DISPLAY" \
@@ -45,7 +53,7 @@ docker run -it --rm \
     --env="WORKSPACE=/root/ur_ws" \
     --volume="${XSOCK}:${XSOCK}:rw" \
     --volume="${XAUTH}:${XAUTH}:rw" \
-    --volume="${WORKSPACE_DIR}:/root/ur_ws/src/ur_pick_and_place:rw" \
+    --volume="${WORKSPACE_DIR}/src/ur_pick_and_place:/root/ur_ws/src/ur_pick_and_place:rw" \
     --net=host \
     --privileged \
     ${GPU_FLAGS} \

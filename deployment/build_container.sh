@@ -1,5 +1,7 @@
 #!/bin/bash
 
+sudo chown -R $USER:$USER . 
+
 if [ -z "$1" ]; then
     echo "Usage: $0 <ros2_distro>"
     echo "Example: $0 jazzy"
@@ -15,6 +17,7 @@ if ! command -v docker &> /dev/null; then
     exit 1
 fi
 
+cd Docker/
 if [ ! -f "Dockerfile" ]; then
     echo "Dockerfile not found in current directory."
     exit 1

@@ -94,8 +94,5 @@ RUN chmod +x /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]
 CMD ["bash"]
 
-COPY ../ ${WORKSPACE}/src/ur_pick_and_place
-
 WORKDIR ${WORKSPACE}
-RUN . /opt/ros/${ROS_DISTRO}/setup.sh && colcon build --symlink-install
-
+RUN . /opt/ros/${ROS_DISTRO}/setup.sh
