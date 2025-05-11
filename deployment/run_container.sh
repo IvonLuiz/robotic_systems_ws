@@ -54,7 +54,9 @@ docker run -it --rm \
     --volume="${XSOCK}:${XSOCK}:rw" \
     --volume="${XAUTH}:${XAUTH}:rw" \
     --volume="${WORKSPACE_DIR}/src:/root/ur_ws/src:rw" \
-    --net=host \
+    --net=ursim-net \
+    --env="ROS_DOMAIN_ID=42" \
+    --env="UROBOT_IP=192.168.56.101" \
     --privileged \
     ${GPU_FLAGS} \
     "${IMAGE_NAME}"
