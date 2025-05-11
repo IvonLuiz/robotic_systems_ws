@@ -17,7 +17,7 @@ WORKSPACE_DIR="$(dirname "$SCRIPT_DIR")"
 echo "--------------------------------------------------"
 echo "Mounting configuration:"
 echo "Host workspace: $WORKSPACE_DIR"
-echo "Mounting host src/ur_pick_and_place → container /root/ur_ws/src/ur_pick_and_place"
+echo "Mounting host src → container /root/ur_ws/src"
 echo "Preserving container's /root/ur_ws/src/Universal_Robots_ROS2_Driver"
 echo "--------------------------------------------------"
 
@@ -53,7 +53,7 @@ docker run -it --rm \
     --env="WORKSPACE=/root/ur_ws" \
     --volume="${XSOCK}:${XSOCK}:rw" \
     --volume="${XAUTH}:${XAUTH}:rw" \
-    --volume="${WORKSPACE_DIR}/src/ur_pick_and_place:/root/ur_ws/src/ur_pick_and_place:rw" \
+    --volume="${WORKSPACE_DIR}/src:/root/ur_ws/src:rw" \
     --net=host \
     --privileged \
     ${GPU_FLAGS} \

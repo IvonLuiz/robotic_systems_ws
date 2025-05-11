@@ -16,7 +16,7 @@ This project provides a Dockerized environment for working with a Universal Robo
 To build the Docker container, use the `build_container.sh` script. Replace `<ros2_distro>` with the desired ROS 2 distribution (e.g., `foxy` or `jazzy`).
 
 ```bash
-cd Docker
+cd deployment
 bash build_container.sh <ros2_distro>
 ```
 
@@ -25,3 +25,4 @@ Once the container is built, you can run it using the run_container.sh script. R
 ```bash
 bash run_container.sh <ros2_distro>
 ```
+
