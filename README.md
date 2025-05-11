@@ -11,7 +11,28 @@ This project provides a Dockerized environment for working with a Universal Robo
   
   Other distributions may work but are not guaranteed.
 
-## Building the Docker Container
+## Development
+### Setup URSim for simulation with docker
+
+The documentation for this steps are on: [reference](https://docs.universal-robots.com/Universal_Robots_ROS2_Documentation/doc/ur_client_library/doc/setup/ursim_docker.html).
+
+In an separated secondary terminal, we will create a dedicated docker network.
+```bash
+docker network create --subnet=192.168.56.0/24 --driver bridge ursim-net
+```
+
+Start URSim Container
+```bash
+docker run --rm -it \
+  --name ursim \
+  --net ursim-net \
+  --ip 192.168.56.101 \
+  -v ${HOME}/.ursim/programs:/ursim/programs \
+  -v ${HOME}/.ursim/urcaps:/urcaps \
+  universalrobots/ursim_e-series
+```
+
+### Building the Docker Container for development
 
 To build the Docker container, use the `build_container.sh` script. Replace `<ros2_distro>` with the desired ROS 2 distribution (e.g., `foxy` or `jazzy`).
 
