@@ -5,7 +5,6 @@ ARG ROS_DISTRO
 ENV ROS_DISTRO=${ROS_DISTRO}
 ENV DEBIAN_FRONTEND=noninteractive
 ENV WORKSPACE=/root/ur_ws
-ENV GZ_VERSION=harmonic
 
 SHELL ["/bin/bash", "-c"]
 
@@ -40,23 +39,6 @@ RUN if [ "${ROS_DISTRO}" = "foxy" ]; then \
       chmod +x cmake-3.22.6-linux-x86_64.sh && \
       ./cmake-3.22.6-linux-x86_64.sh --skip-license --prefix=/usr/local && \
       rm cmake-3.22.6-linux-x86_64.sh; \
-    fi
-
-# Clone appropriate branch of UR ROS2 Driver
-RUN git clone https://github.com/UniversalRobots/Universal_Robots_ROS2_Driver.git && \
-    cd Universal_Robots_ROS2_Driver && \
-    if [ "${ROS_DISTRO}" = "foxy" ]; then \
-        git checkout foxy; \
-    elif [ "${ROS_DISTRO}" = "galactic" ]; then \
-        git checkout galactic; \
-    elif [ "${ROS_DISTRO}" = "humble" ]; then \
-        git checkout humble; \
-    elif [ "${ROS_DISTRO}" = "iron" ]; then \
-        git checkout iron; \
-    elif [ "${ROS_DISTRO}" = "jazzy" ] || [ "${ROS_DISTRO}" = "rolling" ]; then \
-        git checkout main; \
-    else \
-        echo "Distro ${ROS_DISTRO} not officially supported. Using 'main' as default." && git checkout main; \
     fi
 
 WORKDIR ${WORKSPACE}
