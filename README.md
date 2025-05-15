@@ -49,3 +49,10 @@ bash run_container.sh <ros2_distro>
 
 This script will start docker and also clone and install the [ur_client_library](https://docs.universal-robots.com/Universal_Robots_ROS2_Documentation/doc/ur_client_library/doc/installation.html) located in this [repo](https://github.com/UniversalRobots/Universal_Robots_Client_Library) if it is not already in the src/ directory.
 
+### Local Setup
+
+```
+rosdep init
+rosdep update
+rosdep install --from-paths src/
+```
