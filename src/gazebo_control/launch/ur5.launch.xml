@@ -1,0 +1,17 @@
+<?xml version="1.0"?>
+<launch>
+  <include file="$(find-pkg-share ros_gz_sim)/launch/gz_sim.launch.py">
+    <arg name="gz_args" value="empty.sdf -r"/>
+  </include>
+  <node pkg="robot_state_publisher" exec="robot_state_publisher">
+    <param name="robot_description" value="$(command 'xacro $(find-pkg-share ur_description)/urdf/ur.urdf.xacro safety_limits:=true safety_pos_margin:=0.15 safety_k_position:=20 name:=ur ur_type:=ur5 sim_gazebo:=true simulation_controllers:=$(find-pkg-share gazebo_control)/config/ur_controllers.yaml initial_positions_file:=$(find-pkg-share ur_description)/config/initial_positions.yaml')"/>
+  </node>
+  <node pkg="ros_gz_sim" exec="create" args="-topic robot_description"/>
+  <node pkg="rviz2" exec="rviz2" output="screen" args="-d $(find-pkg-share ur_description)/rviz/view_robot.rviz"/>
+  <node
+    name="joint_state_publisher"
+    pkg="joint_state_publisher"
+    exec="joint_state_publisher"
+    output="screen">
+  </node>
+</launch>
