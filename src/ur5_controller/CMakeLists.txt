@@ -7,17 +7,13 @@ if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   add_compile_options(-Wall -Wextra -Wpedantic)
 endif()
 
-# Find dependencies
-find_package(ament_cmake REQUIRED)
-find_package(rclcpp REQUIRED)
-find_package(moveit_ros_planning_interface REQUIRED)
-find_package(moveit_core REQUIRED)
-
 set(PACKAGES
   ament_cmake
   rclcpp
+  rclcpp_action
   moveit_ros_planning_interface
   moveit_core
+  ur5_interface
 )
 
 foreach(pkg IN LISTS PACKAGES)
