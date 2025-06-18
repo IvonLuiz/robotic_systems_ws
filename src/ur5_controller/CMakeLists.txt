@@ -14,6 +14,9 @@ set(PACKAGES
   moveit_ros_planning_interface
   moveit_core
   ur5_interface
+  pluginlib
+  trajectory_msgs
+  geometry_msgs
 )
 
 foreach(pkg IN LISTS PACKAGES)

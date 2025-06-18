@@ -1,14 +1,18 @@
 #pragma once
 
+#include "geometry_msgs/msg/pose.hpp"
 #include "ur5_interface/action/move_to_pose.hpp"
 #include <functional>
 #include <memory>
 #include <moveit/kinematics_base/kinematics_base.hpp>
+#include <moveit/planning_interface/planning_interface.hpp>
+#include <moveit/planning_scene/planning_scene.hpp>
 #include <moveit/robot_model/joint_model_group.hpp>
 #include <moveit/robot_model/robot_model.hpp>
 #include <moveit/robot_model_loader/robot_model_loader.hpp>
 #include <moveit/robot_state/robot_state.hpp>
 #include <mutex>
+#include <pluginlib/class_loader.hpp>
 #include <rcl_action/action_server.h>
 #include <rclcpp/callback_group.hpp>
 #include <rclcpp/executor.hpp>
@@ -22,6 +26,7 @@
 #include <rclcpp_action/server_goal_handle.hpp>
 #include <rclcpp_action/types.hpp>
 #include <string>
+#include <trajectory_msgs/msg/joint_trajectory.hpp>
 
 static const std::string PLANNING_GROUP = "ur_manipulator";
 
@@ -51,6 +56,10 @@ private:
   moveit::core::RobotModelPtr _robot_model;
   std::shared_ptr<moveit::core::RobotState> _robot_state;
   moveit::core::JointModelGroup *_robot_model_group;
+  std::vector<double> _joint_values;
+
+  rclcpp::Publisher<trajectory_msgs::msg::JointTrajectory>::SharedPtr
+      _trajectory_pub;
 
 public:
   UR5Controller();
