@@ -1,4 +1,5 @@
 #include "ur5_controller/ur5_controller.hpp"
+#include "geometry_msgs/msg/pose.hpp"
 #include <memory>
 #include <moveit/robot_state/robot_state.hpp>
 #include <rclcpp/logging.hpp>
@@ -6,10 +7,8 @@
 rclcpp_action::GoalResponse UR5Controller::pose_callback(
     const rclcpp_action::GoalUUID &uuid,
     std::shared_ptr<const ur5_interface::action::MoveToPose::Goal> goal) {
-  // TODO: ADD THIS IMPLEMENTATION
-  RCLCPP_INFO(this->get_logger(), "Received goal request");
-  (void)uuid;
-  (void)goal;
+  RCLCPP_INFO(this->get_logger(), "Received goal request %s",
+              std::string(uuid.begin(), uuid.end()).c_str());
 
   {
     std::lock_guard<std::mutex> guard(this->_mutex);
@@ -17,7 +16,18 @@ rclcpp_action::GoalResponse UR5Controller::pose_callback(
       return rclcpp_action::GoalResponse::REJECT;
     }
   }
-  return rclcpp_action::GoalResponse::ACCEPT_AND_EXECUTE;
+
+  const geometry_msgs::msg::Pose &target_pose = goal->target_pose.pose;
+
+  if (this->_robot_state->setFromIK(
+          this->_robot_model_group, target_pose,
+          this->get_parameter("pose_action_timeout").as_double())) {
+    RCLCPP_INFO(this->get_logger(), "IK solution found for target pose");
+    return rclcpp_action::GoalResponse::ACCEPT_AND_EXECUTE;
+  }
+
+  RCLCPP_ERROR(this->get_logger(), "No IK solution found for target pose");
+  return rclcpp_action::GoalResponse::REJECT;
 }
 
 rclcpp_action::CancelResponse UR5Controller::pose_cancel(
@@ -44,6 +54,7 @@ void UR5Controller::handle_pose_callback(
 
 UR5Controller::UR5Controller() : rclcpp::Node("UR5_CONTROLLER") {
   this->declare_parameter("pose_action_server_name", "pose_server");
+  this->declare_parameter("pose_action_timeout", 0.5);
 
   RCLCPP_INFO(this->get_logger(), "Iniciando UR5Controller Node...");
 
