@@ -1,4 +1,7 @@
 #include "ur5_controller/ur5_controller.hpp"
+#include <memory>
+#include <moveit/robot_state/robot_state.hpp>
+#include <rclcpp/logging.hpp>
 
 rclcpp_action::GoalResponse UR5Controller::pose_callback(
     const rclcpp_action::GoalUUID &uuid,
@@ -10,8 +13,9 @@ rclcpp_action::GoalResponse UR5Controller::pose_callback(
 
   {
     std::lock_guard<std::mutex> guard(this->_mutex);
-    if (this->_current_goal && this->_current_goal->is_active())
+    if (this->_current_goal && this->_current_goal->is_active()) {
       return rclcpp_action::GoalResponse::REJECT;
+    }
   }
   return rclcpp_action::GoalResponse::ACCEPT_AND_EXECUTE;
 }
@@ -57,12 +61,45 @@ UR5Controller::UR5Controller() : rclcpp::Node("UR5_CONTROLLER") {
           rcl_action_server_get_default_options(), this->_cb_group);
 }
 
+void UR5Controller::init_robot_model() {
+  auto shared_node = shared_from_this();
+
+  RCLCPP_INFO(shared_node->get_logger(), "Initing robot model...");
+
+  auto _robot_model_loader =
+      std::make_shared<robot_model_loader::RobotModelLoader>(
+          shared_node, "robot_description");
+
+  _robot_model = _robot_model_loader->getModel();
+
+  if (_robot_model) {
+    RCLCPP_INFO(shared_node->get_logger(), "Robot model successfully loaded.");
+  } else {
+    RCLCPP_ERROR(shared_node->get_logger(), "Failed to load robot model.");
+    return;
+  }
+
+  _robot_state = std::make_shared<moveit::core::RobotState>(_robot_model);
+
+  _robot_state->setToDefaultValues();
+  _robot_model_group = _robot_model->getJointModelGroup("manipulator");
+
+  if (_robot_model_group) {
+    RCLCPP_INFO(shared_node->get_logger(), "Joint model group loaded.");
+  } else {
+    RCLCPP_ERROR(shared_node->get_logger(),
+                 "Failed to load joint model group.");
+  }
+}
+
 int main(int argc, char *argv[]) {
   rclcpp::init(argc, argv);
 
   // rclcpp::spin(std::make_shared<UR5Controller>());
   rclcpp::executors::MultiThreadedExecutor executor;
-  executor.add_node(std::make_shared<UR5Controller>());
+  auto node = std::make_shared<UR5Controller>();
+  node->init_robot_model();
+  executor.add_node(node);
   executor.spin();
 
   rclcpp::shutdown();

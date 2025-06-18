@@ -3,6 +3,8 @@
 #include "ur5_interface/action/move_to_pose.hpp"
 #include <functional>
 #include <memory>
+#include <moveit/kinematics_base/kinematics_base.hpp>
+#include <moveit/robot_model/joint_model_group.hpp>
 #include <moveit/robot_model/robot_model.hpp>
 #include <moveit/robot_model_loader/robot_model_loader.hpp>
 #include <moveit/robot_state/robot_state.hpp>
@@ -46,6 +48,11 @@ private:
           rclcpp_action::ServerGoalHandle<ur5_interface::action::MoveToPose>>
           goal_handle);
 
+  moveit::core::RobotModelPtr _robot_model;
+  std::shared_ptr<moveit::core::RobotState> _robot_state;
+  moveit::core::JointModelGroup *_robot_model_group;
+
 public:
   UR5Controller();
+  void init_robot_model();
 };
