@@ -11,9 +11,6 @@
 
   <depend>rclcpp</depend>
   <depend>rclcpp_action</depend>
-  <depend>moveit_ros_planning_interface</depend>
-  <depend>moveit_core</depend>
-  <depend>moveit_visual_tools</depend>
   <depend>boost</depend>
   <depend>ur5_interface</depend>
   <depend>pluginlib</depend>

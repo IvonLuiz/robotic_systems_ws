@@ -11,8 +11,6 @@ set(PACKAGES
   ament_cmake
   rclcpp
   rclcpp_action
-  moveit_ros_planning_interface
-  moveit_core
   ur5_interface
   pluginlib
   trajectory_msgs
