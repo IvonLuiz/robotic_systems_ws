@@ -8,14 +8,8 @@ endif()
 find_package(ament_cmake REQUIRED)
 
 install(
-  DIRECTORY launch config
+  DIRECTORY launch
   DESTINATION share/${PROJECT_NAME}
-)
-
-install(
-  PROGRAMS
-    scripts/set_initial_position.py
-  DESTINATION lib/${PROJECT_NAME}
 )
 
 ament_package()
