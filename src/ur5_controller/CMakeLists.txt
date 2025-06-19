@@ -35,7 +35,7 @@ include_directories(
 
 # List of nodes: alternating name and source
 set(NODES
-  ur5_controller src/ur5_controller.cpp
+  ur5_gazebo_controller src/ur5_gazebo_controller.cpp
 )
 
 # Macro to define node executables
