@@ -1,9 +1,0 @@
-# Goal
-geometry_msgs/PoseStamped target_pose
----
-# Result
-bool success
-string message
----
-# Feedback
-float32 progress_percentage

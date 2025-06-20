@@ -12,6 +12,7 @@
   <depend>rospy</depend>
 
   <exec_depend>ur</exec_depend>
+  <depend>ur-simulation-gz</depend>
   <exec_depend>rviz2</exec_depend>
 
   <test_depend>ament_lint_auto</test_depend>
