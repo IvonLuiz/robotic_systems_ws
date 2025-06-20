@@ -11,7 +11,12 @@ setup(
             ['resource/' + package_name]),
         ('share/' + package_name, ['package.xml']),
     ],
-    install_requires=['setuptools'],
+    install_requires=[
+        'setuptools',
+        'numpy',
+        'scipy',
+        'transformations',
+    ],
     zip_safe=True,
     maintainer='carlos',
     maintainer_email='ce.cesc01@gmail.com',

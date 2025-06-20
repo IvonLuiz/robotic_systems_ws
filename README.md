@@ -56,3 +56,19 @@ rosdep init
 rosdep update
 rosdep install --from-paths src/
 ```
+
+### Building the Workspace
+
+```
+python3 -m venv env
+source env/bin/activate
+colcon build --base-path src --symlink-install
+```
+
+### For deployment
+
+```
+python3 -m venv env
+source env/bin/activate
+colcon build --base-path src --cmake-args -DCMAKE_BUILD_TYPE=Release
+```

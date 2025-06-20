@@ -5,3 +5,5 @@ log/
 compile_commands.json
 .clangd
 .cache/
+
+env/
