@@ -1,7 +1,9 @@
 import rclpy
 from rclpy.node import Node
+from rclpy.action import ActionClient
 import numpy as np
 from geometry_msgs.msg import Pose
+from control_msgs.action import FollowJointTrajectory
 from scipy.spatial.transform import Rotation as R
 import math
 
@@ -33,6 +35,17 @@ class IKMotionPlanner(Node):
 
         self.declare_parameter("is_left_shoulder", True)
         self.declare_parameter("is_elbow_up", True)
+        self.declare_parameter("controller_name", "scaled_joint_trajectory_controller")
+
+        controller_name = self.get_parameter("controller_name").value
+        self._action_client = ActionClient(
+            self,
+            FollowJointTrajectory,
+            controller_name
+        )
+
+        self.get_logger().info(f"Waiting for action server on {controller_name}")
+        self._action_client.wait_for_server()
 
     def _calculate_transformation_matrix(
         self, theta: float, d: float, a: float, alpha: float
