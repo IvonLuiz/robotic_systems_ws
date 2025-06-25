@@ -62,13 +62,5 @@ rosdep install --from-paths src/
 ```
 python3 -m venv env
 source env/bin/activate
-colcon build --base-path src --symlink-install
-```
-
-### For deployment
-
-```
-python3 -m venv env
-source env/bin/activate
-colcon build --base-path src --cmake-args -DCMAKE_BUILD_TYPE=Release
+colcon build --base-path src
 ```
