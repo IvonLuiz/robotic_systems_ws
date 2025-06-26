@@ -5,6 +5,7 @@ import numpy as np
 from geometry_msgs.msg import Pose
 from control_msgs.action import FollowJointTrajectory
 from scipy.spatial.transform import Rotation as R
+from ur5_interfaces.msg import PoseList
 import math
 
 
@@ -35,15 +36,43 @@ class IKMotionPlanner(Node):
 
         self.declare_parameter("is_left_shoulder", True)
         self.declare_parameter("is_elbow_up", True)
-        self.declare_parameter("controller_name", "scaled_joint_trajectory_controller")
+        self.declare_parameter(
+            "controller_name",
+            "/scaled_joint_trajectory_controller/follow_joint_trajectory",
+        )
+        self.declare_parameter("pose_list_topic", "/pose_list")
 
         controller_name = self.get_parameter("controller_name").value
         self._action_client = ActionClient(self, FollowJointTrajectory, controller_name)
 
         self.get_logger().info(f"Waiting for action server on {controller_name}")
         self._action_client.wait_for_server()
+        self.get_logger().info("Action server is available.")
 
-        self.pose_subscriber = self.create_subscription()
+        # Subscriber to the PoseList topic
+        self.get_logger().info(
+            f"Subscribing to pose list topic: {self.get_parameter('pose_list_topic').value}"
+        )
+        self.pose_subscriber = self.create_subscription(
+            PoseList,
+            self.get_parameter("pose_list_topic").value,
+            self._pose_list_callback,
+            10,
+        )
+
+        self.get_logger().info("IKMotionPlanner node is ready to process poses.")
+
+    def _pose_list_callback(self, msg: PoseList):
+        """
+        Callback function for the PoseList subscriber.
+        It processes the received poses and calculates inverse kinematics for each pose.
+
+        :param msg: PoseList - List of poses to process
+        """
+        self.get_logger().info(f"Received {len(msg.poses)} poses.")
+        for pose in msg.poses:
+            self.get_logger().info(f"Processing pose: {pose}")
+            # Here you can add code to send the result to the action server or use it as needed.
 
     def _calculate_transformation_matrix(
         self, theta: float, d: float, a: float, alpha: float
@@ -87,7 +116,7 @@ class IKMotionPlanner(Node):
 
     def calculate_inverse_kinematics(
         self, target_pose: Pose
-    ) -> tuple(float, float, float, float, float, float):
+    ) -> tuple[float, float, float, float, float, float]:
         """
         Calculate the inverse kinematics for a UR5 Manipulator
 
