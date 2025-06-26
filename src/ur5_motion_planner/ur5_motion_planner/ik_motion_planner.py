@@ -38,14 +38,12 @@ class IKMotionPlanner(Node):
         self.declare_parameter("controller_name", "scaled_joint_trajectory_controller")
 
         controller_name = self.get_parameter("controller_name").value
-        self._action_client = ActionClient(
-            self,
-            FollowJointTrajectory,
-            controller_name
-        )
+        self._action_client = ActionClient(self, FollowJointTrajectory, controller_name)
 
         self.get_logger().info(f"Waiting for action server on {controller_name}")
         self._action_client.wait_for_server()
+
+        self.pose_subscriber = self.create_subscription()
 
     def _calculate_transformation_matrix(
         self, theta: float, d: float, a: float, alpha: float
