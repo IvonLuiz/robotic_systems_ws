@@ -1,12 +1,14 @@
-import rclpy
 from rclpy.node import Node
-from rclpy.action import ActionClient
-import numpy as np
+from rclpy.action import ActionClient, Future
+from action_msgs.msg import GoalStatus
 from geometry_msgs.msg import Pose
 from control_msgs.action import FollowJointTrajectory
 from scipy.spatial.transform import Rotation as R
 from ur5_interfaces.msg import PoseList
+import numpy as np
+import rclpy
 import math
+import time
 
 
 class IKMotionPlanner(Node):
@@ -29,6 +31,7 @@ class IKMotionPlanner(Node):
             [0, 0.0823, 0, 0],
         ]
     )
+    pose_list: list[Pose] = []
 
     def __init__(self):
         super().__init__("ik_motion_planner")
@@ -70,9 +73,79 @@ class IKMotionPlanner(Node):
         :param msg: PoseList - List of poses to process
         """
         self.get_logger().info(f"Received {len(msg.poses)} poses.")
-        for pose in msg.poses:
-            self.get_logger().info(f"Processing pose: {pose}")
-            # Here you can add code to send the result to the action server or use it as needed.
+        self.pose_list = msg.poses
+        self._execute_trajectory(self.pose_list[0].position)
+
+    def _execute_trajectory(self, joint_angles: list[float]):
+        """
+        Execute the trajectory with the given joint angles.
+
+        :param joint_angles: list[float] - List of joint angles to execute
+        """
+        self.get_logger().info(
+            f"Executing trajectory with joint angles: {joint_angles}"
+        )
+
+        goal_msg = FollowJointTrajectory.Goal()
+        goal_msg.trajectory.joint_names = [
+            "shoulder_pan_joint",
+            "shoulder_lift_joint",
+            "elbow_joint",
+            "wrist_1_joint",
+            "wrist_2_joint",
+            "wrist_3_joint",
+        ]
+        point = FollowJointTrajectory.JointTrajectoryPoint()
+        point.positions = joint_angles
+        point.time_from_start.sec = 3
+
+        goal = self._action_client.send_goal_async(point)
+        goal.add_done_callback(self._goal_response_callback)
+
+        self.pose_list.pop(0)
+
+    def _goal_response_callback(self, future: Future):
+        """
+        Callback function for the goal response.
+
+        :param future: Future - The future object containing the result of the action
+        """
+        response = future.result()
+        if not response.accepted:
+            self.get_logger().error("Goal was rejected by the action server.")
+            raise RuntimeError("Goal was rejected by the action server.")
+        self.get_logger().info("Goal accepted by the action server.")
+        result_future = self._action_client.get_result_async(response.goal_id)
+        result_future.add_done_callback(self._result_callback)
+
+    def _result_callback(self, future: Future):
+        """
+        Callback function for the result of the action.
+
+        :param future: Future - The future object containing the result of the action
+        """
+        result = future.result().result
+        status = future.result().status
+        self.get_logger().info(
+            f"Action completed with status: {status}, result: {result}"
+        )
+        if status == GoalStatus.STATUS_SUCCEEDED:
+            self.get_logger().info("Action succeeded.")
+            time.sleep(1)  # Wait for a second before processing the next pose
+            self.get_logger().info("Processing next pose in the list if available.")
+            if self.pose_list:
+                next_pose = self.pose_list[0].position
+                self.get_logger().info(f"Next pose to process: {next_pose}")
+                joint_angles = self.calculate_inverse_kinematics(next_pose)
+                self._execute_trajectory(joint_angles)
+        else:
+            if result.error_code != FollowJointTrajectory.Result.SUCCESSFUL:
+                self.get_logger().error(
+                    f"Action failed with error code: {result.error_code}"
+                )
+                raise RuntimeError(
+                    f"Action failed with error code: {result.error_code}"
+                )
 
     def _calculate_transformation_matrix(
         self, theta: float, d: float, a: float, alpha: float
