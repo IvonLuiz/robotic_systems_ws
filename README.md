@@ -64,3 +64,11 @@ python3 -m venv env
 source env/bin/activate
 colcon build --base-path src
 ```
+
+### Rodando
+
+```
+ros2 launch gazebo_control ur_sim_control.launch.py
+
+ros2 run ur5_motion_planner ik_motion_planner
+```
