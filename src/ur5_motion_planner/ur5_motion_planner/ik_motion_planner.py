@@ -1,5 +1,6 @@
 from rclpy.node import Node
-from rclpy.action import ActionClient, Future
+from rclpy.action import ActionClient
+from rclpy.task import Future
 from action_msgs.msg import GoalStatus
 from geometry_msgs.msg import Pose
 from control_msgs.action import FollowJointTrajectory
