@@ -2,13 +2,7 @@
 
 sudo chown -R $USER:$USER . 
 
-if [ -z "$1" ]; then
-    echo "Usage: $0 <ros2_distro>"
-    echo "Example: $0 jazzy"
-    exit 1
-fi
-
-ROS_DISTRO=$1
+ROS_DISTRO="jazzy"
 IMAGE_NAME="ur_ros2_${ROS_DISTRO}"
 WORKSPACE_DIR=$(pwd)
 

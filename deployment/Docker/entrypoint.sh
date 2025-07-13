@@ -3,35 +3,32 @@
 # docker_entrypoint.sh
 set -e
 
-# move
+echo "Starting ROS 2 ${ROS_DISTRO} container..."
 
 # Source ROS setup
-if [ -f "/opt/ros/${ROS_DISTRO}/setup.sh" ]; then
-    source "/opt/ros/${ROS_DISTRO}/setup.sh"
+if [ -f "/opt/ros/${ROS_DISTRO}/setup.bash" ]; then
+    source "/opt/ros/${ROS_DISTRO}/setup.bash"
+    echo "✓ Sourced ROS ${ROS_DISTRO} setup"
 else
-    echo "Error: ROS setup.sh not found for ${ROS_DISTRO}"
+    echo "Error: ROS setup.bash not found for ${ROS_DISTRO}"
     exit 1
 fi
 
 # Source workspace setup if exists
-if [ -f "${WORKSPACE}/install/setup.sh" ]; then
-    source "${WORKSPACE}/install/setup.sh"
+if [ -f "${WORKSPACE}/install/setup.bash" ]; then
+    source "${WORKSPACE}/install/setup.bash"
+    echo "✓ Sourced workspace setup"
 fi
 
-# Clone and build Universal Robots Client Library if not already present
-if [ ! -d "/root/ur_ws/src/ur_client_library" ]; then
-    echo "Cloning Universal Robots Client Library..."
-    cd /root/ur_ws/src
-    git clone https://github.com/UniversalRobots/Universal_Robots_Client_Library ur_client_library
-    cd ur_client_library
-    mkdir build && cd build
-    cmake ..
-    make
-    make install
-    sudo apt install ros-${ROS_DISTRO}-ur-client-library
-fi
+echo "Installing workspace dependencies..."
+cd ${WORKSPACE}
+rosdep install --from-paths src --rosdistro ${ROS_DISTRO}
 
-cd ${WORKSPACE}/src
+# Change to workspace directory
+cd ${WORKSPACE}
+
+echo "Container setup complete. Ready to use!"
+echo "================================================="
 
 # Execute the command passed to docker run
 exec "$@"

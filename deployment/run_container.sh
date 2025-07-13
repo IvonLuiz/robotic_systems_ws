@@ -1,11 +1,6 @@
 #!/bin/bash
 
-if [ -z "$1" ]; then
-    echo "Usage: $0 <ros2_distro>"
-    exit 1
-fi
-
-ROS_DISTRO=$1
+ROS_DISTRO="jazzy"
 IMAGE_NAME="ur_ros2_${ROS_DISTRO}"
 CONTAINER_NAME="ur_ros2_dev_${ROS_DISTRO}"
 
@@ -18,7 +13,6 @@ echo "--------------------------------------------------"
 echo "Mounting configuration:"
 echo "Host workspace: $WORKSPACE_DIR"
 echo "Mounting host src → container /root/ur_ws/src"
-echo "Preserving container's /root/ur_ws/src/Universal_Robots_ROS2_Driver"
 echo "--------------------------------------------------"
 
 # X11 configuration
@@ -54,7 +48,6 @@ docker run -it --rm \
     --volume="${XSOCK}:${XSOCK}:rw" \
     --volume="${XAUTH}:${XAUTH}:rw" \
     --volume="${WORKSPACE_DIR}/src:/root/ur_ws/src:rw" \
-    --net=ursim-net \
     --env="ROS_DOMAIN_ID=42" \
     --env="UROBOT_IP=192.168.56.101" \
     --privileged \
