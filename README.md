@@ -6,10 +6,7 @@ This project provides a Dockerized environment for working with a Universal Robo
 
 - **Docker**: Ensure Docker is installed and running on your system. You can install Docker by following the instructions at [docker.com](https://www.docker.com/).
 - **Supported ROS 2 Distributions**: This container has been tested with the following ROS 2 distributions:
-  - `foxy`
   - `jazzy`
-  
-  Other distributions may work but are not guaranteed.
 
 ## Development
 ### Setup URSim for simulation with docker
@@ -32,26 +29,45 @@ docker run --rm -it \
   universalrobots/ursim_e-series
 ```
 
+to open other terminal:
+```bash
+docker exec -it ur_ros2_dev_jazzy bash
+```
+
 ### Building the Docker Container for development
 
-To build the Docker container, use the `build_container.sh` script. Replace `<ros2_distro>` with the desired ROS 2 distribution (e.g., `foxy` or `jazzy`).
+To build the Docker container, use the `build_container.sh` script.
 
 ```bash
 cd deployment
-bash build_container.sh <ros2_distro>
+bash build_container.sh
 ```
 
-Once the container is built, you can run it using the run_container.sh script. Replace <ros2_distro> with the same ROS 2 distribution used during the build step.
+Once the container is built, you can run it using the run_container.sh script.
 
 ```bash
-bash run_container.sh <ros2_distro>
+bash run_container.sh
 ```
 
-This script will start docker and also clone and install the [ur_client_library](https://docs.universal-robots.com/Universal_Robots_ROS2_Documentation/doc/ur_client_library/doc/installation.html) located in this [repo](https://github.com/UniversalRobots/Universal_Robots_Client_Library) if it is not already in the src/ directory.
+to open other terminal:
+```bash
+docker exec -it ur_ros2_dev_jazzy bash
+```
+
+## How to build and run code:
+
+### With docker container:
+
+Inside the container:
+
+```bash
+colcon build --base-path src
+source install/setup.bash 
+```
 
 ### Local Setup
 
-```
+```bash
 rosdep init
 rosdep update
 rosdep install --from-paths src/
@@ -59,16 +75,32 @@ rosdep install --from-paths src/
 
 ### Building the Workspace
 
-```
+```bash
 python3 -m venv env
 source env/bin/activate
 colcon build --base-path src
 ```
 
-### Rodando
+### Running
 
-```
+In one terminal:
+```bash
 ros2 launch gazebo_control ur_sim_control.launch.py
+```
 
+In a second separete terminal:
+
+```bash
 ros2 run ur5_motion_planner ik_motion_planner
 ```
+
+to send a pose (this may be wrong idk):
+
+```bash
+ros2 topic pub /pose_list ur5_interfaces/msg/PoseList "{
+  poses: [
+    position: {x: 0.4, y: 0.2, z: 0.3}, orientation: {x: 0.0, y: 0.0, z: 0.0, w: 1.0}
+  ]
+}"
+```
+
