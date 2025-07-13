@@ -12,6 +12,7 @@ from builtin_interfaces.msg import Duration
 from tf2_ros import TransformException
 from tf2_ros.buffer import Buffer
 from tf2_ros.transform_listener import TransformListener
+from control_msgs.msg import JointTolerance
 
 
 # Timeout constants
@@ -39,7 +40,7 @@ class DatasetGenerator(Node):
             [-1.2, -1.4, -1.9, -1.2, 1.5951, -0.0311],
             [-1.6006, -1.7272, -2.2030, -0.8079, 1.5951, -0.0311],
         ]
-        self.reach_position_duration = 2  # seconds to reach position
+        self.reach_position_duration = 1  # seconds to reach position (integer)
 
         self.robot_joints_names = [
             "shoulder_pan_joint",
@@ -70,6 +71,10 @@ class DatasetGenerator(Node):
         # Add TF2 listener
         self.tf_buffer = Buffer()
         self.tf_listener = TransformListener(self.tf_buffer, self)
+        
+        # Send a single random joint angle configuration and print end-effector pose
+        self.get_logger().info("Testing single movement...")
+        self.send_random_joint_angles()
 
     def get_end_effector_pose(self):
         """Get end effector pose using TF2."""
@@ -78,8 +83,7 @@ class DatasetGenerator(Node):
             transform = self.tf_buffer.lookup_transform(
                 'base_link',  # source frame
                 'tool0',      # target frame
-                rclpy.time.Time(),
-                timeout=rclpy.duration.Duration(seconds=1.0))
+                rclpy.time.Time())
             
             # Extract position and orientation
             pose = [
@@ -93,7 +97,7 @@ class DatasetGenerator(Node):
             ]
             return pose
         except TransformException as ex:
-            self.get_logger().warn(f'Could not transform: {ex}')
+            self.get_logger().warn(f'Could not get transform: {ex}')
             return None
 
     def generate_dataset(self):
@@ -113,11 +117,15 @@ class DatasetGenerator(Node):
             point.positions = waypts[i]
             point.time_from_start = time_vec[i]
             joint_trajectory.points.append(point)
-            self.get_logger().info(f"Adding point {i+1}: {point.positions} at {point.time_from_start.sec} seconds")
 
         # Create goal message
         goal_msg = FollowJointTrajectory.Goal()
         goal_msg.trajectory = joint_trajectory
+        goal_msg.goal_tolerance = [
+            JointTolerance(name=joint_name, position=0.0001)  # 0.0001 rad ≈ 0.0057 degrees
+            for joint_name in self.robot_joints_names
+        ]
+        goal_msg.goal_time_tolerance = Duration(sec=1)  # 1-second margin for goal completion
         
         # Send goal and wait for result
         self.get_logger().info("Sending trajectory goal")
@@ -174,8 +182,6 @@ class DatasetGenerator(Node):
         result = self.send_trajectory([joint_angles], time_from_start, self._action_client)
         if result:
             self.get_logger().info("Trajectory executed successfully.")
-            # Give some time for the TF tree to update
-            time.sleep(0.5)
             # Get the end-effector pose after movement
             end_effector_pose = self.get_end_effector_pose()
             if end_effector_pose:
@@ -192,38 +198,14 @@ class DatasetGenerator(Node):
 
 def main():
     rclpy.init()
-    
-    # Create dataset generator node with a specified number of points
-    num_points = 10  # For testing, you can increase this for a larger dataset
+    num_points = 10
     dataset_generator_node = DatasetGenerator(num_points=num_points)
-    
-    # Use MultiThreadedExecutor to handle callbacks in parallel
-    executor = MultiThreadedExecutor()
-    executor.add_node(dataset_generator_node)
-    
-    # Choose mode: test a single movement or generate a full dataset
-    generate_full_dataset = False  # Set to True to generate and save a full dataset
-    
-    if generate_full_dataset:
-        dataset_generator_node.get_logger().info("Generating dataset...")
-        dataset = dataset_generator_node.generate_dataset()
-        dataset_generator_node.save_dataset(dataset, "ur5_dataset.npz")
-    else:
-        # Send a single random joint angle configuration and print end-effector pose
-        dataset_generator_node.get_logger().info("Testing single movement...")
-        dataset_generator_node.send_random_joint_angles()
-    
-    # Spin to process callbacks
-    try:
-        dataset_generator_node.get_logger().info("Spinning node...")
-        executor.spin()
-    except KeyboardInterrupt:
-        pass
-    finally:
-        # Cleanup
-        executor.shutdown()
-        dataset_generator_node.destroy_node()
-        rclpy.shutdown()
+    rclpy.spin(dataset_generator_node)
+
+    # Cleanup
+    dataset_generator_node.shutdown()
+    dataset_generator_node.destroy_node()
+    rclpy.shutdown()
 
 
 if __name__ == '__main__':
