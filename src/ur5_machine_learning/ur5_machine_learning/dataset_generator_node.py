@@ -4,6 +4,7 @@ import rclpy
 import time
 import os
 import csv
+from concurrent.futures import Future
 
 from rclpy.action import ActionClient
 from control_msgs.action import FollowJointTrajectory
@@ -32,6 +33,7 @@ class DatasetGenerator(Node):
         the inputs for the machine learning algorithms.
         '''
         super().__init__('dataset_generator_node')  # Initialize the Node class
+        self.completion_future = Future()  # Future to signal completion of dataset generation
         self.num_points = num_points
         # Example waypoints for testing (subistitute for random later)
         self.waypts = [
@@ -156,7 +158,6 @@ class DatasetGenerator(Node):
     def sample_joint_angles(self, previous_angles=None):
         '''!
         Generate random joint angles within valid and safe limits.
-
         '''        
         # Generate random angles within the specified limits
         random_angles = np.random.uniform(
@@ -188,7 +189,8 @@ class DatasetGenerator(Node):
         previous_angles = self.initial_angles  # previous angles will be our initial angles
         angles = self.initial_angles  # next angles will be our initial angles
 
-        for n in range(self.num_points):
+        n = 0
+        while n < self.num_points:
             self.get_logger().info(f"------Generating dataset point {n+1}/{self.num_points}------")
             self.get_logger().info(f"Generated joint angles: {angles}")
             
@@ -209,16 +211,16 @@ class DatasetGenerator(Node):
                     self.get_logger().info(f"End effector pose after movement: {end_effector_pose}")
                     self.save_dataset(angles, end_effector_pose)
                     angles = self.sample_joint_angles(previous_angles)  # Sample new angles for the next iteration
+                    n += 1  # Increment the counter only if the trajectory was successful
                 else:
                     self.get_logger().warn("Could not get end effector pose after movement, resetting to previous angles.")
                     angles = previous_angles  # Reset to previous angles if pose is not available
-                    n -= 1
             else:
                 self.get_logger().error("Failed to execute trajectory, resetting to previous angles.")
                 angles = previous_angles  # Reset to previous angles if pose is not available
-                n -= 1
         
         self.get_logger().info("Dataset generation completed.")
+        self.completion_future.set_result(True)
 
     def save_dataset(self, angles, end_effector_pose, filename='data/dataset'):
         """Add a new row to the dataset and overwrite the previous one."""
@@ -256,20 +258,24 @@ class DatasetGenerator(Node):
 
 def main():
     rclpy.init()
-    num_points = 10
+    num_points = 15
     dataset_generator_node = DatasetGenerator(num_points=num_points)
     executor = MultiThreadedExecutor()
     executor.add_node(dataset_generator_node)
 
     try:
-        executor.spin()
+        # Spin until completion or interrupt
+        while rclpy.ok() and not dataset_generator_node.completion_future.done():
+            executor.spin_once(timeout_sec=0.1)
     except KeyboardInterrupt:
-        pass
+        dataset_generator_node.get_logger().info("Keyboard interrupt received")
     finally:
-        # Proper cleanup sequence
+        # Clean shutdown sequence
+        dataset_generator_node.get_logger().info("Shutting down...")
         executor.shutdown()
         dataset_generator_node.destroy_node()
-        rclpy.shutdown()
+        if rclpy.ok():
+            rclpy.shutdown()
 
 
 if __name__ == '__main__':
