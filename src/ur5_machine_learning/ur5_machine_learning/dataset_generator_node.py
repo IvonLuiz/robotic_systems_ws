@@ -42,6 +42,7 @@ class DatasetGenerator(Node):
         self.angle_step = np.pi/2  # new angle will be updated between previous angle + [-angle_step, angle_step] (radians)
         self.reach_position_duration = 1  # seconds to reach position (integer). 
                                           # the shorter the duration, the faster the robot will move.
+        self.start_time = time.time()  # initialize start time for data collection
         self.robot_joints_names = [
             "shoulder_pan_joint",
             "shoulder_lift_joint",
@@ -74,6 +75,15 @@ class DatasetGenerator(Node):
         
         # Send a single random joint angle configuration and print end-effector pose
         self.send_random_joint_angles()
+
+    def get_timer(self) -> None:
+        """
+        Get the timer for elapsed time since the start of data collection.
+
+        :return: None
+        """
+        elapsed_time = time.time() - self.start_time
+        return f"{elapsed_time:.2f}"  # Return elapsed time in seconds with 2 decimal places
 
     def get_end_effector_pose(self) -> list[float]:
         """
@@ -200,6 +210,7 @@ class DatasetGenerator(Node):
         n = 0
         while n < self.num_points:
             self.get_logger().info(f"------Generating dataset point {n+1}/{self.num_points}------")
+            self.get_logger().info(f"Current time running: {self.get_timer()} s")
             self.get_logger().info(f"Generated joint angles: {angles}")
             
             # time vector
@@ -217,18 +228,19 @@ class DatasetGenerator(Node):
                 end_effector_pose = self.get_end_effector_pose()
                 if end_effector_pose:
                     self.get_logger().info(f"End effector pose after movement: {end_effector_pose}")
-                    self.save_dataset(angles, end_effector_pose)
+                    self.save_dataset(angles, end_effector_pose, 'data/dataset')
+                    self.save_dataset_reachability(angles, True, 'data/reachability')
                     # update states
                     previous_angles = angles
                     n += 1
                 else:
                     self.get_logger().warn("Could not get end effector pose after movement, resetting to previous angles.")
                     angles = previous_angles  # reset to previous angles if pose is not available
-                    self.save_dataset(angles, [None, None, None, None, None, None, None], filename='data/dataset_failed')
+                    self.save_dataset_reachability(angles, False, 'data/reachability')
             else:
                 self.get_logger().error("Failed to execute trajectory, resetting to previous angles.")
                 angles = previous_angles  # reset to previous angles if failed
-                self.save_dataset(angles, end_effector_pose, filename='data/dataset_failed')
+                self.save_dataset_reachability(angles, False, 'data/reachability')
 
             angles = self.sample_joint_angles(previous_angles)  # sample new angles for the next iteration
         
@@ -238,6 +250,7 @@ class DatasetGenerator(Node):
     def save_dataset(self, angles: list[float], end_effector_pose: list[float], filename: str = 'data/dataset') -> None:
         """
         Add a new row to the dataset and overwrite the previous one.
+        This dataset tracks end-effector pose from joint angles.
 
         :param angles: list[float] - List of joint angles.
         :param end_effector_pose: list[float] - List of end-effector pose elements (x, y, z, qx, qy, qz, qw).
@@ -278,7 +291,48 @@ class DatasetGenerator(Node):
             writer = csv.writer(csvfile)
             writer.writerow(angles + end_effector_pose)
 
+    def save_dataset_reachability(self, angles: list[float], reachable: bool, filename: str = 'data/reachability') -> None:
+        """
+        Add a new row to the dataset and overwrite the previous one.
+        This dataset tracks whether the given joint angles are reachable.
 
+        :param angles: list[float] - List of joint angles.
+        :param reachable: bool - True if the joint angles are reachable, False otherwise.
+        :param filename: str - Base filename for saving the reachability data.
+        """
+        os.makedirs('data', exist_ok=True)
+
+        csv_filename = filename + '.csv'
+        npz_filename = filename + '.npz'
+
+        # Initialize empty arrays if file doesn't exist
+        if not os.path.exists(npz_filename):
+            joint_angles = np.empty((0, 6))  # Empty array for 6 joint angles
+            reachability = np.empty((0, 1))  # Empty array for reachability
+        else:
+            # Load existing data
+            with np.load(npz_filename) as data:
+                joint_angles = data['joint_angles']
+                reachability = data['reachability']
+
+        # Create CSV file with header if it doesn't exist
+        if not os.path.exists(csv_filename):
+            with open(csv_filename, mode='w', newline='') as csvfile:
+                writer = csv.writer(csvfile)
+                writer.writerow(self.robot_joints_names + ['reachable'])
+
+        # Append the data to CSV
+        with open(csv_filename, mode='a', newline='') as csvfile:
+            writer = csv.writer(csvfile)
+            writer.writerow(angles + [reachable])
+
+        # Append the data to NPZ
+        new_angles = np.array([angles])
+        new_reachability = np.array([[reachable]])
+        joint_angles = np.vstack((joint_angles, new_angles))
+        reachability = np.vstack((reachability, new_reachability))
+
+        np.savez_compressed(npz_filename, joint_angles=joint_angles, reachability=reachability)
 def main():
     rclpy.init()
     
