@@ -44,6 +44,7 @@ class DatasetGenerator(Node):
         self.reach_position_duration = 1  # seconds to reach position (integer). 
                                           # the shorter the duration, the faster the robot will move.
         self.start_time = time.time()  # initialize start time for data collection
+        self.fail_limit = 4 # amount of consecutive failures before resetting angles
         self.robot_joints_names = [
             "shoulder_pan_joint",
             "shoulder_lift_joint",
@@ -208,6 +209,7 @@ class DatasetGenerator(Node):
         previous_angles = self.initial_angles  # previous angles will be our initial angles
         angles = self.initial_angles  # next angles will be our initial angles
 
+        fail_counter = 0
         n = 0
         while n < self.num_points:
             self.get_logger().info(f"------Generating dataset point {n+1}/{self.num_points}------")
@@ -234,14 +236,22 @@ class DatasetGenerator(Node):
                     # update states
                     previous_angles = angles
                     n += 1
+                    fail_counter = 0
                 else:
                     self.get_logger().warn("Could not get end effector pose after movement, resetting to previous angles.")
                     self.save_dataset_reachability(angles, False, 'data/reachability')
                     angles = previous_angles  # reset to previous angles if pose is not available
+                    fail_counter += 1
             else:
                 self.get_logger().error("Failed to execute trajectory, resetting to previous angles.")
                 self.save_dataset_reachability(angles, False, 'data/reachability')
                 angles = previous_angles  # reset to previous angles if failed
+                fail_counter += 1
+
+            if fail_counter >= self.fail_limit:
+                self.get_logger().warn("Fail limit reached, resetting angles.")
+                previous_angles = self.initial_angles  # reset to initial angles angles
+                fail_counter = 0
 
             angles = self.sample_joint_angles(previous_angles)  # sample new angles for the next iteration
         
