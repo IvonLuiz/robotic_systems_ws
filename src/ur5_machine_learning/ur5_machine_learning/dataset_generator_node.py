@@ -25,13 +25,13 @@ TIMEOUT_WAIT_ACTION = 20
 
 class DatasetGenerator(Node):
     def __init__(self, num_points=None):
-        '''!
+        """
         This class generates datasets for UR5 robot to be used in machine learning algorithms.
         The generation is done by applying forward kinematics to a set of joint angles and
         saving the resulting end-effector positions and orientations. The angles will be the
         ground truth for the dataset, while the end-effector positions and orientations will be
         the inputs for the machine learning algorithms.
-        '''
+        """
         super().__init__('dataset_generator_node')  # Initialize the Node class
         self.completion_future = Future()  # Future to signal completion of dataset generation
         self.num_points = num_points
@@ -78,8 +78,13 @@ class DatasetGenerator(Node):
         # Send a single random joint angle configuration and print end-effector pose
         self.send_random_joint_angles()
 
-    def get_end_effector_pose(self):
-        """Get end effector pose using TF2."""
+    def get_end_effector_pose(self) -> list:
+        """
+        Get end effector pose using TF2.
+
+        :return: A list containing the end-effector pose [x, y, z, qx, qy, qz, qw] or None if unavailable.
+        :rtype: list
+        """
         try:
             # Lookup transform from base_link to tool0 (or your end effector frame)
             transform = self.tf_buffer.lookup_transform(
@@ -100,13 +105,20 @@ class DatasetGenerator(Node):
         except TransformException as ex:
             self.get_logger().warn(f'Could not get transform: {ex}')
             return None
-
-    def generate_dataset(self):
-        """Generate a dataset of joint angles and corresponding end-effector poses."""
-        pass
     
-    def send_trajectory(self, waypts, time_vec, action_client):
-        """Send robot trajectory."""
+    def send_trajectory(self, waypts: list, time_vec: list, action_client: ActionClient) -> bool:
+        """
+        Send robot trajectory.
+
+        :param waypts: List of waypoints for the trajectory.
+        :type waypts: list
+        :param time_vec: List of time durations for each waypoint.
+        :type time_vec: list
+        :param action_client: Action client to send the trajectory.
+        :type action_client: ActionClient
+        :return: True if the trajectory execution was successful, False otherwise.
+        :rtype: bool
+        """
         if len(waypts) != len(time_vec):
             raise Exception("waypoints vector and time vec should be same length")
 
@@ -155,10 +167,15 @@ class DatasetGenerator(Node):
         result = get_result_future.result().result
         return result.error_code == FollowJointTrajectory.Result.SUCCESSFUL
 
-    def sample_joint_angles(self, previous_angles=None):
-        '''!
+    def sample_joint_angles(self, previous_angles: list = None) -> list:
+        """
         Generate random joint angles within valid and safe limits.
-        '''        
+
+        :param previous_angles: List of previous joint angles to base the new angles on.
+        :type previous_angles: list, optional
+        :return: A list of new random joint angles.
+        :rtype: list
+        """        
         # Generate random angles within the specified limits
         random_angles = np.random.uniform(
             low=-self.angle_step, high=self.angle_step, size=(len(self.robot_joints_names))
@@ -167,8 +184,10 @@ class DatasetGenerator(Node):
 
         return new_random_angles.tolist()
 
-    def wait_for_simulation(self):
-        """Wait for the simulation to be ready."""        
+    def wait_for_simulation(self) -> None:
+        """
+        Wait for the simulation to be ready.
+        """
         self.get_logger().info("Waiting for action server to be ready...")
         while True:
             if self._action_client.server_is_ready():
@@ -177,15 +196,15 @@ class DatasetGenerator(Node):
                 break
         self.get_logger().info("Simulation is ready.")
 
-    def send_random_joint_angles(self):
-        '''!
+    def send_random_joint_angles(self) -> None:
+        """
         Send random joint angles to the robot.
         Since we have constraints on the UR5 robot, we will generate angles
         within a range that avoids collisions and ensures safe operation.
-        The angle generation will be small steps from the previous angles,
-        starting from the initial pose. If we get a collision, we will
+        The angle generation will be medium size steps from the previous angles,
+        starting from the initial pose. If we get a collision or failure, we will
         generate new angles from previous correct angles.
-        '''
+        """
         previous_angles = self.initial_angles  # previous angles will be our initial angles
         angles = self.initial_angles  # next angles will be our initial angles
 
@@ -222,8 +241,17 @@ class DatasetGenerator(Node):
         self.get_logger().info("Dataset generation completed.")
         self.completion_future.set_result(True)
 
-    def save_dataset(self, angles, end_effector_pose, filename='data/dataset'):
-        """Add a new row to the dataset and overwrite the previous one."""
+    def save_dataset(self, angles: list, end_effector_pose: list, filename: str = 'data/dataset') -> None:
+        """
+        Add a new row to the dataset and overwrite the previous one.
+
+        :param angles: List of joint angles.
+        :type angles: list
+        :param end_effector_pose: List of end-effector pose elements (x, y, z, qx, qy, qz, qw).
+        :type end_effector_pose: list
+        :param filename: Base filename for saving the dataset.
+        :type filename: str
+        """
         os.makedirs('data', exist_ok=True)
         
         npz_filename = filename + '.npz'
