@@ -219,7 +219,9 @@ class DatasetGenerator(Node):
                     self.get_logger().info(f"End effector pose after movement: {end_effector_pose}")
                     self.save_dataset(angles, end_effector_pose)
                     angles = self.sample_joint_angles(previous_angles)  # Sample new angles for the next iteration
-                    n += 1  # Increment the counter only if the trajectory was successful
+                    # update states
+                    previous_angles = angles
+                    n += 1
                 else:
                     self.get_logger().warn("Could not get end effector pose after movement, resetting to previous angles.")
                     angles = previous_angles  # Reset to previous angles if pose is not available
@@ -252,6 +254,11 @@ class DatasetGenerator(Node):
             with np.load(npz_filename) as data:
                 joint_angles = data['joint_angles']
                 ee_poses = data['end_effector_pose']
+        if not os.path.exists(csv_filename):
+            # Create CSV file with header if it doesn't exist
+            with open(csv_filename, mode='w', newline='') as csvfile:
+                writer = csv.writer(csvfile)
+                writer.writerow(self.robot_joints_names + ['x', 'y', 'z', 'qx', 'qy', 'qz', 'qw'])
         
         new_angles = np.array([angles])
         new_pose = np.array([end_effector_pose])
