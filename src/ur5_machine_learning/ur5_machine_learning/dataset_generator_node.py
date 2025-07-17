@@ -75,12 +75,11 @@ class DatasetGenerator(Node):
         # Send a single random joint angle configuration and print end-effector pose
         self.send_random_joint_angles()
 
-    def get_end_effector_pose(self) -> list:
+    def get_end_effector_pose(self) -> list[float]:
         """
         Get end effector pose using TF2.
 
-        :return: A list containing the end-effector pose [x, y, z, qx, qy, qz, qw] or None if unavailable.
-        :rtype: list
+        :return: list[float] - A list containing the end-effector pose [x, y, z, qx, qy, qz, qw] or None if unavailable.
         """
         try:
             # Lookup transform from base_link to tool0 (or your end effector frame)
@@ -103,18 +102,14 @@ class DatasetGenerator(Node):
             self.get_logger().warn(f'Could not get transform: {ex}')
             return None
     
-    def send_trajectory(self, waypts: list, time_vec: list, action_client: ActionClient) -> bool:
+    def send_trajectory(self, waypts: list[list[float]], time_vec: list[Duration], action_client: ActionClient) -> bool:
         """
         Send robot trajectory.
 
-        :param waypts: List of waypoints for the trajectory.
-        :type waypts: list
-        :param time_vec: List of time durations for each waypoint.
-        :type time_vec: list
-        :param action_client: Action client to send the trajectory.
-        :type action_client: ActionClient
-        :return: True if the trajectory execution was successful, False otherwise.
-        :rtype: bool
+        :param waypts: list[list[float]] - List of waypoints for the trajectory.
+        :param time_vec: list[Duration] - List of time durations for each waypoint.
+        :param action_client: ActionClient - Action client to send the trajectory.
+        :return: bool - True if the trajectory execution was successful, False otherwise.
         """
         if len(waypts) != len(time_vec):
             raise Exception("waypoints vector and time vec should be same length")
@@ -164,14 +159,12 @@ class DatasetGenerator(Node):
         result = get_result_future.result().result
         return result.error_code == FollowJointTrajectory.Result.SUCCESSFUL
 
-    def sample_joint_angles(self, previous_angles: list = None) -> list:
+    def sample_joint_angles(self, previous_angles: list[float] = None) -> list[float]:
         """
         Generate random joint angles within valid and safe limits.
 
-        :param previous_angles: List of previous joint angles to base the new angles on.
-        :type previous_angles: list, optional
-        :return: A list of new random joint angles.
-        :rtype: list
+        :param previous_angles: list[float] - List of previous joint angles to base the new angles on.
+        :return: list[float] - A list of new random joint angles.
         """        
         # Generate random angles within the specified limits
         random_angles = np.random.uniform(
@@ -237,16 +230,13 @@ class DatasetGenerator(Node):
         self.get_logger().info("Dataset generation completed.")
         self.completion_future.set_result(True)
 
-    def save_dataset(self, angles: list, end_effector_pose: list, filename: str = 'data/dataset') -> None:
+    def save_dataset(self, angles: list[float], end_effector_pose: list[float], filename: str = 'data/dataset') -> None:
         """
         Add a new row to the dataset and overwrite the previous one.
 
-        :param angles: List of joint angles.
-        :type angles: list
-        :param end_effector_pose: List of end-effector pose elements (x, y, z, qx, qy, qz, qw).
-        :type end_effector_pose: list
-        :param filename: Base filename for saving the dataset.
-        :type filename: str
+        :param angles: list[float] - List of joint angles.
+        :param end_effector_pose: list[float] - List of end-effector pose elements (x, y, z, qx, qy, qz, qw).
+        :param filename: str - Base filename for saving the dataset.
         """
         os.makedirs('data', exist_ok=True)
         
