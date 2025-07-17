@@ -240,12 +240,10 @@ class DatasetGenerator(Node):
                 else:
                     self.get_logger().warn("Could not get end effector pose after movement, resetting to previous angles.")
                     self.save_dataset_reachability(angles, False, 'data/reachability')
-                    angles = previous_angles  # reset to previous angles if pose is not available
                     fail_counter += 1
             else:
                 self.get_logger().error("Failed to execute trajectory, resetting to previous angles.")
                 self.save_dataset_reachability(angles, False, 'data/reachability')
-                angles = previous_angles  # reset to previous angles if failed
                 fail_counter += 1
 
             if fail_counter >= self.fail_limit:
