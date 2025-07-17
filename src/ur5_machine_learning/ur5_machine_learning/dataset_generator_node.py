@@ -218,16 +218,17 @@ class DatasetGenerator(Node):
                 if end_effector_pose:
                     self.get_logger().info(f"End effector pose after movement: {end_effector_pose}")
                     self.save_dataset(angles, end_effector_pose)
-                    angles = self.sample_joint_angles(previous_angles)  # Sample new angles for the next iteration
                     # update states
                     previous_angles = angles
                     n += 1
                 else:
                     self.get_logger().warn("Could not get end effector pose after movement, resetting to previous angles.")
-                    angles = previous_angles  # Reset to previous angles if pose is not available
+                    angles = previous_angles  # reset to previous angles if pose is not available
             else:
                 self.get_logger().error("Failed to execute trajectory, resetting to previous angles.")
-                angles = previous_angles  # Reset to previous angles if pose is not available
+                angles = previous_angles  # reset to previous angles if fail
+
+            angles = self.sample_joint_angles(previous_angles)  # sample new angles for the next iteration
         
         self.get_logger().info("Dataset generation completed.")
         self.completion_future.set_result(True)
