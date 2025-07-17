@@ -3,6 +3,7 @@ import numpy as np
 import rclpy
 import time
 import os
+import argparse
 import csv
 from concurrent.futures import Future
 
@@ -24,26 +25,23 @@ TIMEOUT_WAIT_ACTION = 20
 
 
 class DatasetGenerator(Node):
-    def __init__(self, num_points=None):
+    def __init__(self, num_points: int):
         """
         This class generates datasets for UR5 robot to be used in machine learning algorithms.
         The generation is done by applying forward kinematics to a set of joint angles and
         saving the resulting end-effector positions and orientations. The angles will be the
         ground truth for the dataset, while the end-effector positions and orientations will be
         the inputs for the machine learning algorithms.
+        
+        :param num_points: Number of data points to generate.
         """
         super().__init__('dataset_generator_node')  # Initialize the Node class
-        self.completion_future = Future()  # Future to signal completion of dataset generation
         self.num_points = num_points
-        # Example waypoints for testing (subistitute for random later)
-        self.waypts = [
-            [-1.6006, -1.7272, -2.2030, -0.8079, 1.5951, -0.0311],
-            [-1.2, -1.4, -1.9, -1.2, 1.5951, -0.0311],
-            [-1.6006, -1.7272, -2.2030, -0.8079, 1.5951, -0.0311],
-        ]
-        self.initial_angles = [0, -np.pi/2, 0.01, -np.pi/2,  0.01, 0.01]
-        self.angle_step = np.pi/2  # radians
-        self.reach_position_duration = 1  # seconds to reach position (integer)
+        self.completion_future = Future()  # Future to signal completion of dataset generation
+        self.initial_angles = [0, -np.pi/2, 0.01, -np.pi/2,  0.01, 0.01]  # UR5 initial joint angles pointing straight down
+        self.angle_step = np.pi/2  # new angle will be updated between previous angle + [-angle_step, angle_step] (radians)
+        self.reach_position_duration = 1  # seconds to reach position (integer). 
+                                          # the shorter the duration, the faster the robot will move.
         self.robot_joints_names = [
             "shoulder_pan_joint",
             "shoulder_lift_joint",
@@ -52,7 +50,6 @@ class DatasetGenerator(Node):
             "wrist_2_joint",
             "wrist_3_joint",
         ]
-
         self.declare_parameter(
             "controller_name",
             "/scaled_joint_trajectory_controller/follow_joint_trajectory",
@@ -194,7 +191,6 @@ class DatasetGenerator(Node):
                 self.get_logger().info("Action server is available, dataset generation in 3 seconds.")
                 time.sleep(3)
                 break
-        self.get_logger().info("Simulation is ready.")
 
     def send_random_joint_angles(self) -> None:
         """
@@ -283,11 +279,15 @@ class DatasetGenerator(Node):
             writer.writerow(angles + end_effector_pose)
 
 
-
 def main():
     rclpy.init()
-    num_points = 15
-    dataset_generator_node = DatasetGenerator(num_points=num_points)
+    
+    parser = argparse.ArgumentParser(description='UR5 Dataset Generator')
+    parser.add_argument('--num-points', type=int, default=100,
+                      help='Number of data points to generate (default: 100)')
+    args = parser.parse_args()
+
+    dataset_generator_node = DatasetGenerator(num_points=args.num_points)
     executor = MultiThreadedExecutor()
     executor.add_node(dataset_generator_node)
 
