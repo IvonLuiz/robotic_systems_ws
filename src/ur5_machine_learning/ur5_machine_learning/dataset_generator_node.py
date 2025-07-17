@@ -25,7 +25,7 @@ TIMEOUT_WAIT_ACTION = 20
 
 
 class DatasetGenerator(Node):
-    def __init__(self, num_points: int):
+    def __init__(self, num_points: int, angle_step: float = 45):
         """
         This class generates datasets for UR5 robot to be used in machine learning algorithms.
         The generation is done by applying forward kinematics to a set of joint angles and
@@ -34,12 +34,13 @@ class DatasetGenerator(Node):
         the inputs for the machine learning algorithms.
         
         :param num_points: Number of data points to generate.
+        :param angle_step: Angle step in degrees for joint sampling.
         """
         super().__init__('dataset_generator_node')  # Initialize the Node class
         self.num_points = num_points
         self.completion_future = Future()  # Future to signal completion of dataset generation
         self.initial_angles = [0, -np.pi/2, 0.01, -np.pi/2,  0.01, 0.01]  # UR5 initial joint angles pointing straight down
-        self.angle_step = np.pi/2  # new angle will be updated between previous angle + [-angle_step, angle_step] (radians)
+        self.angle_step = np.radians(angle_step)  # new angle will be updated between previous angle + [-angle_step, angle_step] (radians)
         self.reach_position_duration = 1  # seconds to reach position (integer). 
                                           # the shorter the duration, the faster the robot will move.
         self.start_time = time.time()  # initialize start time for data collection
@@ -333,15 +334,19 @@ class DatasetGenerator(Node):
         reachability = np.vstack((reachability, new_reachability))
 
         np.savez_compressed(npz_filename, joint_angles=joint_angles, reachability=reachability)
+
+
 def main():
     rclpy.init()
     
     parser = argparse.ArgumentParser(description='UR5 Dataset Generator')
-    parser.add_argument('--num-points', type=int, default=100,
-                      help='Number of data points to generate (default: 100)')
+    parser.add_argument('--num-points', type=int, default=1000,
+                        help='Number of data points to generate (default: 1000)')
+    parser.add_argument('--angle-step', type=float, default=45,
+                        help='Angle step in degrees for joint sampling (default: 45)')
     args = parser.parse_args()
 
-    dataset_generator_node = DatasetGenerator(num_points=args.num_points)
+    dataset_generator_node = DatasetGenerator(num_points=args.num_points, angle_step=args.angle_step)
     executor = MultiThreadedExecutor()
     executor.add_node(dataset_generator_node)
 

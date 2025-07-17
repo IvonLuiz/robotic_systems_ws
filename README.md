@@ -124,5 +124,7 @@ ros2 launch gazebo_control ur_sim_control.launch.py
 
 In a second separate terminal:
 ```bash
-ros2 run ur5_machine_learning dataset_generator_node 
+ros2 run ur5_machine_learning dataset_generator_node --num-points 10000 --angle-step 45
 ```
+The parameters can be changed accordingly, or left as default (1000 steps and 45 degrees).
+Note: the random angle step used in the code will be from [-angle_step, +angle_step].
