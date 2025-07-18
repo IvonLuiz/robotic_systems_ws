@@ -81,21 +81,29 @@ source env/bin/activate
 colcon build --base-path src
 ```
 
-### Running
+## Working
+
+## New terminal setup
+Remember to always source when using a new terminal (on container or not):
+
+```bash
+source install/setup.bash 
+```
+
+### Inverse kinematics
+Our IK motion planner implementation can be run by launching the simulation and the script:
 
 In one terminal:
 ```bash
 ros2 launch gazebo_control ur_sim_control.launch.py
 ```
 
-In a second separete terminal:
-
+In a second separate terminal
 ```bash
 ros2 run ur5_motion_planner ik_motion_planner
 ```
 
-to send a pose (this may be wrong idk):
-
+to send a pose modify the example:
 ```bash
 ros2 topic pub /pose_list ur5_interfaces/msg/PoseList "{
   poses: [
@@ -104,3 +112,19 @@ ros2 topic pub /pose_list ur5_interfaces/msg/PoseList "{
 }"
 ```
 
+### Machine Learning
+#### Dataset generation
+
+To generate a certain dataset size, we will also start the simulation and the script. The dataset_generator_node will make random movinments to the robot and save the end effector position and the angles that made the moviments.
+
+In one terminal:
+```bash
+ros2 launch gazebo_control ur_sim_control.launch.py
+```
+
+In a second separate terminal:
+```bash
+ros2 run ur5_machine_learning dataset_generator_node --num-points 10000 --angle-step 45
+```
+The parameters can be changed accordingly, or left as default (1000 steps and 45 degrees).
+Note: the random angle step used in the code will be from [-angle_step, +angle_step].

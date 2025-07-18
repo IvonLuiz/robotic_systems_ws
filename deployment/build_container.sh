@@ -31,7 +31,9 @@ if [ $? -eq 0 ]; then
     echo "Image name: $IMAGE_NAME"
     echo ""
     echo "To run the container, execute:"
-    echo "docker run -it --rm ${IMAGE_NAME}"
+    echo "bash run_container.sh"
+    echo "To open in other terminals:"
+    echo "docker exec -it ur_ros2_dev_jazzy bash"
 else
     echo "Docker build failed."
     exit 1

@@ -47,7 +47,7 @@ docker run -it --rm \
     --env="WORKSPACE=/root/ur_ws" \
     --volume="${XSOCK}:${XSOCK}:rw" \
     --volume="${XAUTH}:${XAUTH}:rw" \
-    --volume="${WORKSPACE_DIR}/src:/root/ur_ws/src:rw" \
+    --volume="${WORKSPACE_DIR}:/root/ur_ws:rw" \
     --env="ROS_DOMAIN_ID=42" \
     --env="UROBOT_IP=192.168.56.101" \
     --privileged \
