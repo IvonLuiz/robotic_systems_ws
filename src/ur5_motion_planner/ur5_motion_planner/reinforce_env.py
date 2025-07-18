@@ -19,6 +19,9 @@ from tf2_ros.buffer import Buffer
 from tf2_ros.transform_listener import TransformListener
 from sensor_msgs.msg import JointState
 
+from stable_baselines3 import SAC
+from stable_baselines3.common.env_checker import check_env
+
 class UR5Env(gym.Env, Node):
     """
     Reinforcement Learning Environment for a UR5 robot in Gazebo.
@@ -114,8 +117,12 @@ class UR5Env(gym.Env, Node):
         new_target_angles = np.clip(new_target_angles, lower_limits, upper_limits)
 
         # Send the trajectory to the robot
-        self.send_trajectory_goal(new_target_angles.tolist())
-        time.sleep(dt) # Wait for the action to have an effect
+        result = self.send_trajectory_goal(new_target_angles.tolist(), dt)
+        if not result:
+            self.get_logger().error("Failed to send trajectory goal")
+            return self.observation_space.sample(), 0, False, True, {"error": "Failed to send trajectory goal"}
+        #time.sleep(dt) # Wait for the action to have an effect
+
 
         # 2. Get New Observation
         observation = self._get_observation()
@@ -148,9 +155,19 @@ class UR5Env(gym.Env, Node):
         self.episode_step_count = 0
 
         # Reset robot to a home position
-        home_joint_angles = [0.0, -1.57, 1.57, -1.57, -1.57, 0.0]
-        self.send_trajectory_goal(home_joint_angles)
-        time.sleep(1.0) # Give it time to reach home
+        home_joint_angles = [
+            0,
+            -np.pi / 2,
+            0.01,
+            -np.pi / 2,
+            0.01,
+            0.01
+        ]
+        result = self.send_trajectory_goal(home_joint_angles) # returns True if successful
+
+        if not result:
+            self.get_logger().error("Failed to send home joint angles")
+            return None
 
         # Generate a new random target
         self.target_position = self._generate_random_target()
@@ -202,7 +219,7 @@ class UR5Env(gym.Env, Node):
             self.get_logger().warn(f'Could not get transform: {ex}')
             return None
 
-    def send_trajectory_goal(self, joint_angles):
+    def send_trajectory_goal(self, joint_angles, dt=2.0):
         goal_msg = FollowJointTrajectory.Goal()
         trajectory_point = JointTrajectoryPoint()
         trajectory_point.positions = joint_angles
@@ -211,7 +228,35 @@ class UR5Env(gym.Env, Node):
         goal_msg.trajectory.joint_names = self.robot_joints_names
         goal_msg.trajectory.points.append(trajectory_point)
         
-        self._action_client.send_goal_async(goal_msg)
+        send_goal_future = self._action_client.send_goal_async(goal_msg)
+        rclpy.spin_until_future_complete(
+            self, send_goal_future, timeout_sec=20
+        )
+        
+        if not send_goal_future.done():
+            self.get_logger().error("Failed to send goal")
+            return False
+
+        goal_handle = send_goal_future.result()
+
+        if not goal_handle.accepted:
+            self.get_logger().error("Goal was rejected")
+            return False
+
+        # Wait for result
+        self.get_logger().info("Waiting for trajectory execution")
+        get_result_future = goal_handle.get_result_async()
+        rclpy.spin_until_future_complete(
+            self, get_result_future, timeout_sec=20
+        )
+
+        if not get_result_future.done():
+            self.get_logger().error("Failed to get result")
+            return False
+
+        result = get_result_future.result().result
+        return result.error_code == FollowJointTrajectory.Result.SUCCESSFUL
+        
 
     def close(self):
         """Cleanup ROS 2 resources."""
@@ -222,30 +267,57 @@ def main():
     
     env = UR5Env()
     
-    # spin the ROS 2 node in a separate thread avoid blocking the main RL training loop
     executor = MultiThreadedExecutor()
     executor.add_node(env)
     thread = threading.Thread(target=executor.spin, daemon=True)
     thread.start()
 
-    # Example for debugging the usage of the environment (random action)
-    # the correct RL agent in implemented with Stable Baselines3 on train_node.py
     try:
-        for episode in range(5):
-            print(f"\n--- Starting Episode {episode + 1} ---")
+        # --- 1. Check the environment ---
+        # It will display warnings if something is wrong
+        check_env(env)
+        print("\nEnvironment check passed!")
+
+        # --- 2. Instantiate and Train the Agent ---
+        # SAC (Soft Actor-Critic) is a good choice for continuous control tasks
+        model = SAC(
+            "MlpPolicy",
+            env,
+            verbose=1,
+            tensorboard_log="./ur5_sac_tensorboard/"
+        )
+        
+        print("\n--- Starting Training ---")
+        # Train for a specified number of steps
+        model.learn(total_timesteps=20000, log_interval=4)
+        
+        # --- 3. Save the Trained Model ---
+        model_path = "models/sac_ur5_reacher_model.zip"
+        model.save(model_path)
+        print(f"--- Model saved to {model_path} ---")
+
+        # --- 4. Load and Evaluate the Trained Model ---
+        del model # remove to demonstrate saving and loading
+        
+        print("\n--- Loading and Evaluating Trained Model ---")
+        loaded_model = SAC.load(model_path, env=env)
+
+        for episode in range(10): # Evaluate for 10 episodes
             obs, info = env.reset()
             done = False
             total_reward = 0
             while not done:
-                action = env.action_space.sample() # Replace with your agent's action
+                # Use the model to predict the best action
+                action, _states = loaded_model.predict(obs, deterministic=True)
                 obs, reward, terminated, truncated, info = env.step(action)
                 total_reward += reward
                 done = terminated or truncated
-            print(f"Episode {episode + 1} finished with total reward: {total_reward}")
-    
+            print(f"Evaluation Episode {episode + 1} finished with total reward: {total_reward:.2f}")
+
     except KeyboardInterrupt:
-        print("Training interrupted.")
+        print("Training interrupted by user.")
     finally:
+        print("Closing environment and shutting down ROS.")
         env.close()
         rclpy.shutdown()
         thread.join()
