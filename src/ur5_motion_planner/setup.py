@@ -25,7 +25,8 @@ setup(
     tests_require=['pytest'],
     entry_points={
         'console_scripts': [
-            'ik_motion_planner = ur5_motion_planner.ik_motion_planner:main'
+            'ik_motion_planner = ur5_motion_planner.ik_motion_planner:main',
+            'validator = ur5_motion_planner.validator:main',
         ],
     },
 )
