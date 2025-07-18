@@ -15,6 +15,8 @@ setup(
         "numpy",
         "scipy",
         "transformations",
+        "gymnasium",
+        "stable-baselines3",
     ],
     zip_safe=True,
     maintainer="carlos",
@@ -27,6 +29,8 @@ setup(
             "ik_motion_planner = ur5_motion_planner.ik_motion_planner:main",
             "validator = ur5_motion_planner.validator:main",
             "dataset_generator_node = ur5_motion_planner.dataset_generator_node:main",
+            "ur5_reinforce_env = ur5_motion_planner.reinforce_env:main",
+            "ur5_reinforce_train = ur5_motion_planner.train:main",
         ],
     },
 )
