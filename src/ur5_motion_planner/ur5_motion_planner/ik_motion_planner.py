@@ -4,9 +4,12 @@ from rclpy.task import Future
 from action_msgs.msg import GoalStatus
 from geometry_msgs.msg import Pose
 from control_msgs.action import FollowJointTrajectory
+from control_msgs.msg import JointTolerance
 from trajectory_msgs.msg import JointTrajectoryPoint
 from scipy.spatial.transform import Rotation as R
 from ur5_interfaces.msg import PoseList
+from tf_transformations import quaternion_matrix
+from builtin_interfaces.msg import Duration
 import numpy as np
 import rclpy
 import math
@@ -76,7 +79,8 @@ class IKMotionPlanner(Node):
         """
         self.get_logger().info(f"Received {len(msg.poses)} poses.")
         self.pose_list = msg.poses
-        self._execute_trajectory(self.pose_list[0].position)
+        joint_angles = self.calculate_inverse_kinematics(self.pose_list[0])
+        self._execute_trajectory(joint_angles)
 
     def _execute_trajectory(self, joint_angles: list[float]):
         """
@@ -98,11 +102,29 @@ class IKMotionPlanner(Node):
             "wrist_3_joint",
         ]
         point = JointTrajectoryPoint()
+        self.get_logger().info(
+            f"Setting joint angles for trajectory point: {joint_angles}"
+        )
+        self.get_logger().info(f"Joint angles type: {type(joint_angles)}")
+        self.get_logger().info(f"Joint angles length: {len(joint_angles)}")
         point.positions = joint_angles
-        point.time_from_start.sec = 3
+        point.velocities = [0.0] * len(joint_angles)  # No velocity control
+        point.time_from_start = Duration(sec=10, nanosec=0)
 
-        goal = self._action_client.send_goal_async(point)
-        goal.add_done_callback(self._goal_response_callback)
+        goal_msg.trajectory.points.append(point)
+        self.get_logger().info(
+            f"Sending trajectory:\nJoint names: {goal_msg.trajectory.joint_names}\nPositions: {point.positions}"
+        )
+        goal_msg.goal_time_tolerance = Duration(sec=0, nanosec=0)
+        goal_msg.goal_tolerance = [
+            JointTolerance(
+                position=0.01, velocity=0.01, name=goal_msg.trajectory.joint_names[i]
+            )
+            for i in range(6)
+        ]
+
+        send_goal_future = self._action_client.send_goal_async(goal_msg)
+        send_goal_future.add_done_callback(self._goal_response_callback)
 
         self.pose_list.pop(0)
 
@@ -117,7 +139,7 @@ class IKMotionPlanner(Node):
             self.get_logger().error("Goal was rejected by the action server.")
             raise RuntimeError("Goal was rejected by the action server.")
         self.get_logger().info("Goal accepted by the action server.")
-        result_future = self._action_client.get_result_async(response.goal_id)
+        result_future = response.get_result_async()
         result_future.add_done_callback(self._result_callback)
 
     def _result_callback(self, future: Future):
@@ -189,14 +211,23 @@ class IKMotionPlanner(Node):
         T[:3, 3] = translation
         return T
 
+    def pose_to_matrix(self, pose: Pose) -> np.ndarray:
+        """Convert ROS Pose to 4x4 transformation matrix."""
+        q = pose.orientation
+        t = pose.position
+        T = quaternion_matrix([q.x, q.y, q.z, q.w])
+        T[0, 3] = t.x
+        T[1, 3] = t.y
+        T[2, 3] = t.z
+        return T
+
+    def clamp(self, value: float, min_val: float = -1.0, max_val: float = 1.0) -> float:
+        """Clamp a value to avoid math domain errors."""
+        return max(min(value, max_val), min_val)
+
     def calculate_inverse_kinematics(
         self, target_pose: Pose
     ) -> tuple[float, float, float, float, float, float]:
-        """
-        Calculate the inverse kinematics for a UR5 Manipulator
-
-        :target_pose: Pose - Desired pose to be obtainede
-        """
         self.get_logger().info(
             f"Calculating inverse kinematics for target pose: {target_pose}"
         )
@@ -204,62 +235,80 @@ class IKMotionPlanner(Node):
         is_left_shoulder = 1 if self.get_parameter("is_left_shoulder").value else -1
         is_elbow_up = 1 if self.get_parameter("is_elbow_up").value else -1
 
-        T_0_6: np.ndarray = np.eye(4)
-        transformation_matrixs = []
-        for i in range(len(self.dh_table.shape[0])):
-            theta, d, a, alpha = self.dh_table[i]
-            T_i = self._calculate_transformation_matrix(theta, d, a, alpha)
-            transformation_matrixs.append(T_i)
-            T_0_6 = T_0_6 @ T_i
+        T_0_6 = self.pose_to_matrix(target_pose)
+        R_0_6 = T_0_6[:3, :3]
+        P_0_6 = T_0_6[:3, 3]
 
         d_4 = self.dh_table[3, 1]
         d_6 = self.dh_table[5, 1]
-        P_0_5 = T_0_6 @ np.array([0, 0, -d_6, 1]) - np.array([0, 0, 0, 1])
-
-        psi = math.atan2(P_0_5[1], P_0_5[0])
-
-        phi = is_left_shoulder * math.acos(
-            d_4 / math.sqrt(P_0_5[0] ** 2 + P_0_5[1] ** 2)
-        )
-
-        theta_1 = psi + phi + math.pi / 2
-
-        P_0_6_X = T_0_6[:3, 0]
-        P_0_6_Y = T_0_6[:3, 1]
-
-        P_1_6_Z = P_0_6_X * math.sin(theta_1) + P_0_6_Y * math.cos(theta_1)
-        theta_5 = is_left_shoulder * math.acos((P_1_6_Z - d_4) / d_6)
-
-        T_0_1 = transformation_matrixs[0]
-
-        T_6_1 = np.linalg.inv(np.linalg.inv(T_0_1) @ T_0_6)
-        T_6_1_Z_x = T_6_1[:2, 0]
-        T_6_1_Z_y = T_6_1[:2, 1]
-
-        theta_6 = math.atan2(
-            -T_6_1_Z_y / math.sin(theta_5), T_6_1_Z_x / math.sin(theta_5)
-        )
-
-        T_1_4 = np.eye(4)
-        for i in range(1, 4):
-            T_1_4 = T_1_4 @ transformation_matrixs[i]
-
-        P_1_3 = T_1_4 @ np.array([0, -d_4, 0, 1]) - np.array([0, 0, 0, 1])
-
         a_2 = self.dh_table[1, 2]
         a_3 = self.dh_table[2, 2]
-        P_1_3_norm = np.linalg.norm(P_1_3)
-        theta_3 = is_elbow_up * math.acos(
-            (P_1_3_norm**2 - a_2**2 - a_3**3) / (2 * a_2 * a_3)
+
+        # Position of wrist (joint 5)
+        P_0_5 = P_0_6 - d_6 * R_0_6[:, 2]
+
+        # θ1
+        psi = math.atan2(P_0_5[1], P_0_5[0])
+        phi = is_left_shoulder * math.acos(
+            self.clamp(d_4 / math.hypot(P_0_5[0], P_0_5[1]))
         )
+        theta_1 = psi + phi + math.pi / 2
 
-        theta_2 = math.atan2(
-            P_1_3[1],
-            -P_1_3[0],
-        ) - math.asin(a_3 * math.sin(theta_3) / P_1_3_norm)
+        # Rotation from base to wrist
+        sin1 = math.sin(theta_1)
+        cos1 = math.cos(theta_1)
+        P_1_6_Z = P_0_6[0] * sin1 - P_0_6[1] * cos1
+        raw_theta_5_cos = (P_1_6_Z - d_4) / d_6
+        self.get_logger().info(f"Raw acos input (theta_5): {raw_theta_5_cos}")
+        theta_5 = is_left_shoulder * math.acos(self.clamp(raw_theta_5_cos))
 
-        T_3_4 = transformation_matrixs[3]
-        theta_4 = math.atan2(T_3_4[0, 1], T_3_4[0, 0])
+        # θ6
+        R_0_1 = self._calculate_transformation_matrix(
+            self.dh_table[0, 0],
+            self.dh_table[0, 1],
+            self.dh_table[0, 2],
+            self.dh_table[0, 3],
+        )[:3, :3]
+        R_1_6 = np.linalg.inv(R_0_1) @ R_0_6
+        if abs(math.sin(theta_5)) < 1e-6:
+            theta_6 = 0.0  # avoid division by zero
+        else:
+            theta_6 = math.atan2(
+                -R_1_6[1, 2] / math.sin(theta_5), R_1_6[0, 2] / math.sin(theta_5)
+            )
+
+        # θ3 and θ2 via cosine law
+        # Compute T_1_4 based on known DH params
+        T_0_1 = self._calculate_transformation_matrix(
+            theta_1, self.dh_table[0, 1], self.dh_table[0, 2], self.dh_table[0, 3]
+        )
+        T_1_0 = np.linalg.inv(T_0_1)
+        T_1_6 = T_1_0 @ T_0_6
+        P_1_6 = T_1_6[:3, 3]
+
+        # P_1_3: Vector to wrist joint (joint 4) from frame 1
+        P_1_3 = P_1_6 - d_6 * T_1_6[:3, 2]
+        P_1_3_norm = np.linalg.norm(P_1_3)
+
+        cos_theta_3 = self.clamp((P_1_3_norm**2 - a_2**2 - a_3**2) / (2 * a_2 * a_3))
+        theta_3 = is_elbow_up * math.acos(cos_theta_3)
+
+        # θ2 from triangle geometry
+        k1 = a_2 + a_3 * math.cos(theta_3)
+        k2 = a_3 * math.sin(theta_3)
+        gamma = math.atan2(k2, k1)
+        theta_2 = math.atan2(P_1_3[2], -P_1_3[0]) - gamma
+
+        # θ4 from orientation
+        R_1_2 = self._calculate_transformation_matrix(
+            theta_2, self.dh_table[1, 1], self.dh_table[1, 2], self.dh_table[1, 3]
+        )[:3, :3]
+        R_2_3 = self._calculate_transformation_matrix(
+            theta_3, self.dh_table[2, 1], self.dh_table[2, 2], self.dh_table[2, 3]
+        )[:3, :3]
+        R_1_3 = R_1_2 @ R_2_3
+        R_3_6 = np.linalg.inv(R_1_3) @ R_1_6
+        theta_4 = math.atan2(R_3_6[0, 1], R_3_6[0, 0])
 
         return theta_1, theta_2, theta_3, theta_4, theta_5, theta_6
 
