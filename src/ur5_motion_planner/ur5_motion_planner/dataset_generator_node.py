@@ -32,19 +32,30 @@ class DatasetGenerator(Node):
         saving the resulting end-effector positions and orientations. The angles will be the
         ground truth for the dataset, while the end-effector positions and orientations will be
         the inputs for the machine learning algorithms.
-        
+
         :param num_points: Number of data points to generate.
         :param angle_step: Angle step in degrees for joint sampling.
         """
-        super().__init__('dataset_generator_node')  # Initialize the Node class
+        super().__init__("dataset_generator_node")  # Initialize the Node class
         self.num_points = num_points
-        self.completion_future = Future()  # Future to signal completion of dataset generation
-        self.initial_angles = [0, -np.pi/2, 0.01, -np.pi/2,  0.01, 0.01]  # UR5 initial joint angles pointing straight down
-        self.angle_step = np.radians(angle_step)  # new angle will be updated between previous angle + [-angle_step, angle_step] (radians)
-        self.reach_position_duration = 1  # seconds to reach position (integer). 
-                                          # the shorter the duration, the faster the robot will move.
+        self.completion_future = (
+            Future()
+        )  # Future to signal completion of dataset generation
+        self.initial_angles = [
+            0,
+            -np.pi / 2,
+            0.01,
+            -np.pi / 2,
+            0.01,
+            0.01,
+        ]  # UR5 initial joint angles pointing straight down
+        self.angle_step = np.radians(
+            angle_step
+        )  # new angle will be updated between previous angle + [-angle_step, angle_step] (radians)
+        self.reach_position_duration = 1  # seconds to reach position (integer).
+        # the shorter the duration, the faster the robot will move.
         self.start_time = time.time()  # initialize start time for data collection
-        self.fail_limit = 4 # amount of consecutive failures before resetting angles
+        self.fail_limit = 4  # amount of consecutive failures before resetting angles
         self.robot_joints_names = [
             "shoulder_pan_joint",
             "shoulder_lift_joint",
@@ -63,10 +74,10 @@ class DatasetGenerator(Node):
         # Initialize controller action client
         controller_name = self.get_parameter("controller_name").value
         self._action_client = ActionClient(
-            self, 
-            FollowJointTrajectory, 
+            self,
+            FollowJointTrajectory,
             controller_name,
-            callback_group=self.callback_group
+            callback_group=self.callback_group,
         )
         self.get_logger().info("Waiting for gazebo simulation to initialize...")
         self.wait_for_simulation()
@@ -74,7 +85,7 @@ class DatasetGenerator(Node):
         # Add TF2 listener
         self.tf_buffer = Buffer()
         self.tf_listener = TransformListener(self.tf_buffer, self)
-        
+
         # Send a single random joint angle configuration and print end-effector pose
         self.send_random_joint_angles()
 
@@ -96,10 +107,9 @@ class DatasetGenerator(Node):
         try:
             # Lookup transform from base_link to tool0 (or your end effector frame)
             transform = self.tf_buffer.lookup_transform(
-                'base_link',  # source frame
-                'tool0',      # target frame
-                rclpy.time.Time())
-            
+                "base_link", "tool0", rclpy.time.Time()  # source frame  # target frame
+            )
+
             pose = [
                 transform.transform.translation.x,
                 transform.transform.translation.y,
@@ -107,14 +117,19 @@ class DatasetGenerator(Node):
                 transform.transform.rotation.x,
                 transform.transform.rotation.y,
                 transform.transform.rotation.z,
-                transform.transform.rotation.w
+                transform.transform.rotation.w,
             ]
             return pose
         except TransformException as ex:
-            self.get_logger().warn(f'Could not get transform: {ex}')
+            self.get_logger().warn(f"Could not get transform: {ex}")
             return None
-    
-    def send_trajectory(self, waypts: list[list[float]], time_vec: list[Duration], action_client: ActionClient) -> bool:
+
+    def send_trajectory(
+        self,
+        waypts: list[list[float]],
+        time_vec: list[Duration],
+        action_client: ActionClient,
+    ) -> bool:
         """
         Send robot trajectory.
 
@@ -139,35 +154,43 @@ class DatasetGenerator(Node):
         goal_msg = FollowJointTrajectory.Goal()
         goal_msg.trajectory = joint_trajectory
         goal_msg.goal_tolerance = [
-            JointTolerance(name=joint_name, position=0.0001)  # 0.0001 rad ≈ 0.0057 degrees
+            JointTolerance(
+                name=joint_name, position=0.0001
+            )  # 0.0001 rad ≈ 0.0057 degrees
             for joint_name in self.robot_joints_names
         ]
-        goal_msg.goal_time_tolerance = Duration(sec=1)  # 1-second margin for goal completion
-        
+        goal_msg.goal_time_tolerance = Duration(
+            sec=1
+        )  # 1-second margin for goal completion
+
         # Send goal and wait for result
         self.get_logger().info("Sending trajectory goal")
         send_goal_future = action_client.send_goal_async(goal_msg)
-        rclpy.spin_until_future_complete(self, send_goal_future, timeout_sec=TIMEOUT_WAIT_ACTION)
-        
+        rclpy.spin_until_future_complete(
+            self, send_goal_future, timeout_sec=TIMEOUT_WAIT_ACTION
+        )
+
         if not send_goal_future.done():
             self.get_logger().error("Failed to send goal")
             return False
-            
+
         goal_handle = send_goal_future.result()
-        
+
         if not goal_handle.accepted:
             self.get_logger().error("Goal was rejected")
             return False
-            
+
         # Wait for result
         self.get_logger().info("Waiting for trajectory execution")
         get_result_future = goal_handle.get_result_async()
-        rclpy.spin_until_future_complete(self, get_result_future, timeout_sec=TIMEOUT_WAIT_ACTION)
-        
+        rclpy.spin_until_future_complete(
+            self, get_result_future, timeout_sec=TIMEOUT_WAIT_ACTION
+        )
+
         if not get_result_future.done():
             self.get_logger().error("Failed to get result")
             return False
-            
+
         result = get_result_future.result().result
         return result.error_code == FollowJointTrajectory.Result.SUCCESSFUL
 
@@ -177,10 +200,12 @@ class DatasetGenerator(Node):
 
         :param previous_angles: list[float] - List of previous joint angles to base the new angles on.
         :return: list[float] - A list of new random joint angles.
-        """        
+        """
         # Generate random angles within the specified limits
         random_angles = np.random.uniform(
-            low=-self.angle_step, high=self.angle_step, size=(len(self.robot_joints_names))
+            low=-self.angle_step,
+            high=self.angle_step,
+            size=(len(self.robot_joints_names)),
         )
         new_random_angles = np.array(random_angles) + np.array(previous_angles)
 
@@ -193,7 +218,9 @@ class DatasetGenerator(Node):
         self.get_logger().info("Waiting for action server to be ready...")
         while True:
             if self._action_client.server_is_ready():
-                self.get_logger().info("Action server is available, dataset generation in 3 seconds.")
+                self.get_logger().info(
+                    "Action server is available, dataset generation in 3 seconds."
+                )
                 time.sleep(3)
                 break
 
@@ -206,16 +233,20 @@ class DatasetGenerator(Node):
         starting from the initial pose. If we get a collision or failure, we will
         generate new angles from previous correct angles.
         """
-        previous_angles = self.initial_angles  # previous angles will be our initial angles
+        previous_angles = (
+            self.initial_angles
+        )  # previous angles will be our initial angles
         angles = self.initial_angles  # next angles will be our initial angles
 
         fail_counter = 0
         n = 0
         while n < self.num_points:
-            self.get_logger().info(f"------Generating dataset point {n+1}/{self.num_points}------")
+            self.get_logger().info(
+                f"------Generating dataset point {n+1}/{self.num_points}------"
+            )
             self.get_logger().info(f"Current time running: {self.get_timer()} s")
             self.get_logger().info(f"Generated joint angles: {angles}")
-            
+
             # time vector
             time_from_start = []
             duration_msg = Duration()
@@ -223,27 +254,35 @@ class DatasetGenerator(Node):
             time_from_start.append(duration_msg)
 
             # sending tracjectory and checking result
-            result = self.send_trajectory([angles], time_from_start, self._action_client)
+            result = self.send_trajectory(
+                [angles], time_from_start, self._action_client
+            )
 
             if result:
                 self.get_logger().info("Trajectory executed successfully.")
                 # Get the end-effector pose after movement
                 end_effector_pose = self.get_end_effector_pose()
                 if end_effector_pose:
-                    self.get_logger().info(f"End effector pose after movement: {end_effector_pose}")
-                    self.save_dataset(angles, end_effector_pose, 'data/dataset')
-                    self.save_dataset_reachability(angles, True, 'data/reachability')
+                    self.get_logger().info(
+                        f"End effector pose after movement: {end_effector_pose}"
+                    )
+                    self.save_dataset(angles, end_effector_pose, "data/dataset")
+                    self.save_dataset_reachability(angles, True, "data/reachability")
                     # update states
                     previous_angles = angles
                     n += 1
                     fail_counter = 0
                 else:
-                    self.get_logger().warn("Could not get end effector pose after movement, resetting to previous angles.")
-                    self.save_dataset_reachability(angles, False, 'data/reachability')
+                    self.get_logger().warn(
+                        "Could not get end effector pose after movement, resetting to previous angles."
+                    )
+                    self.save_dataset_reachability(angles, False, "data/reachability")
                     fail_counter += 1
             else:
-                self.get_logger().error("Failed to execute trajectory, resetting to previous angles.")
-                self.save_dataset_reachability(angles, False, 'data/reachability')
+                self.get_logger().error(
+                    "Failed to execute trajectory, resetting to previous angles."
+                )
+                self.save_dataset_reachability(angles, False, "data/reachability")
                 fail_counter += 1
 
             if fail_counter >= self.fail_limit:
@@ -251,12 +290,19 @@ class DatasetGenerator(Node):
                 previous_angles = self.initial_angles  # reset to initial angles angles
                 fail_counter = 0
 
-            angles = self.sample_joint_angles(previous_angles)  # sample new angles for the next iteration
-        
+            angles = self.sample_joint_angles(
+                previous_angles
+            )  # sample new angles for the next iteration
+
         self.get_logger().info("Dataset generation completed.")
         self.completion_future.set_result(True)
 
-    def save_dataset(self, angles: list[float], end_effector_pose: list[float], filename: str = 'data/dataset') -> None:
+    def save_dataset(
+        self,
+        angles: list[float],
+        end_effector_pose: list[float],
+        filename: str = "data/dataset",
+    ) -> None:
         """
         Add a new row to the dataset and overwrite the previous one.
         This dataset tracks end-effector pose from joint angles.
@@ -265,42 +311,48 @@ class DatasetGenerator(Node):
         :param end_effector_pose: list[float] - List of end-effector pose elements (x, y, z, qx, qy, qz, qw).
         :param filename: str - Base filename for saving the dataset.
         """
-        os.makedirs('data', exist_ok=True)
-        
-        npz_filename = filename + '.npz'
-        csv_filename = filename + '.csv'
-        
+        os.makedirs("data", exist_ok=True)
+
+        npz_filename = filename + ".npz"
+        csv_filename = filename + ".csv"
+
         # Initialize empty arrays if file doesn't exist
         if not os.path.exists(npz_filename):
             joint_angles = np.empty((0, 6))  # Empty array for 6 joint angles
-            ee_poses = np.empty((0, 7))     # Empty array for 7 pose elements (x,y,z + quaternion)
+            ee_poses = np.empty(
+                (0, 7)
+            )  # Empty array for 7 pose elements (x,y,z + quaternion)
         else:
             # Load existing data
             with np.load(npz_filename) as data:
-                joint_angles = data['joint_angles']
-                ee_poses = data['end_effector_pose']
+                joint_angles = data["joint_angles"]
+                ee_poses = data["end_effector_pose"]
         if not os.path.exists(csv_filename):
             # Create CSV file with header if it doesn't exist
-            with open(csv_filename, mode='w', newline='') as csvfile:
+            with open(csv_filename, mode="w", newline="") as csvfile:
                 writer = csv.writer(csvfile)
-                writer.writerow(self.robot_joints_names + ['x', 'y', 'z', 'qx', 'qy', 'qz', 'qw'])
-        
+                writer.writerow(
+                    self.robot_joints_names + ["x", "y", "z", "qx", "qy", "qz", "qw"]
+                )
+
         new_angles = np.array([angles])
         new_pose = np.array([end_effector_pose])
-        
+
         # vertically stack the new data
         joint_angles = np.vstack((joint_angles, new_angles))
         ee_poses = np.vstack((ee_poses, new_pose))
 
         # .npz and .csv saving
-        np.savez_compressed(npz_filename, 
-                        joint_angles=joint_angles, 
-                        end_effector_pose=ee_poses)
-        with open(csv_filename, mode='a', newline='') as csvfile:
+        np.savez_compressed(
+            npz_filename, joint_angles=joint_angles, end_effector_pose=ee_poses
+        )
+        with open(csv_filename, mode="a", newline="") as csvfile:
             writer = csv.writer(csvfile)
             writer.writerow(angles + end_effector_pose)
 
-    def save_dataset_reachability(self, angles: list[float], reachable: bool, filename: str = 'data/reachability') -> None:
+    def save_dataset_reachability(
+        self, angles: list[float], reachable: bool, filename: str = "data/reachability"
+    ) -> None:
         """
         Add a new row to the dataset and overwrite the previous one.
         This dataset tracks whether the given joint angles are reachable.
@@ -309,10 +361,10 @@ class DatasetGenerator(Node):
         :param reachable: bool - True if the joint angles are reachable, False otherwise.
         :param filename: str - Base filename for saving the reachability data.
         """
-        os.makedirs('data', exist_ok=True)
+        os.makedirs("data", exist_ok=True)
 
-        csv_filename = filename + '.csv'
-        npz_filename = filename + '.npz'
+        csv_filename = filename + ".csv"
+        npz_filename = filename + ".npz"
 
         # Initialize empty arrays if file doesn't exist
         if not os.path.exists(npz_filename):
@@ -321,17 +373,17 @@ class DatasetGenerator(Node):
         else:
             # Load existing data
             with np.load(npz_filename) as data:
-                joint_angles = data['joint_angles']
-                reachability = data['reachability']
+                joint_angles = data["joint_angles"]
+                reachability = data["reachability"]
 
         # Create CSV file with header if it doesn't exist
         if not os.path.exists(csv_filename):
-            with open(csv_filename, mode='w', newline='') as csvfile:
+            with open(csv_filename, mode="w", newline="") as csvfile:
                 writer = csv.writer(csvfile)
-                writer.writerow(self.robot_joints_names + ['reachable'])
+                writer.writerow(self.robot_joints_names + ["reachable"])
 
         # Append the data to CSV
-        with open(csv_filename, mode='a', newline='') as csvfile:
+        with open(csv_filename, mode="a", newline="") as csvfile:
             writer = csv.writer(csvfile)
             writer.writerow(angles + [reachable])
 
@@ -341,20 +393,32 @@ class DatasetGenerator(Node):
         joint_angles = np.vstack((joint_angles, new_angles))
         reachability = np.vstack((reachability, new_reachability))
 
-        np.savez_compressed(npz_filename, joint_angles=joint_angles, reachability=reachability)
+        np.savez_compressed(
+            npz_filename, joint_angles=joint_angles, reachability=reachability
+        )
 
 
 def main():
     rclpy.init()
-    
-    parser = argparse.ArgumentParser(description='UR5 Dataset Generator')
-    parser.add_argument('--num-points', type=int, default=1000,
-                        help='Number of data points to generate (default: 1000)')
-    parser.add_argument('--angle-step', type=float, default=45,
-                        help='Angle step in degrees for joint sampling (default: 45)')
+
+    parser = argparse.ArgumentParser(description="UR5 Dataset Generator")
+    parser.add_argument(
+        "--num-points",
+        type=int,
+        default=1000,
+        help="Number of data points to generate (default: 1000)",
+    )
+    parser.add_argument(
+        "--angle-step",
+        type=float,
+        default=45,
+        help="Angle step in degrees for joint sampling (default: 45)",
+    )
     args = parser.parse_args()
 
-    dataset_generator_node = DatasetGenerator(num_points=args.num_points, angle_step=args.angle_step)
+    dataset_generator_node = DatasetGenerator(
+        num_points=args.num_points, angle_step=args.angle_step
+    )
     executor = MultiThreadedExecutor()
     executor.add_node(dataset_generator_node)
 
@@ -373,5 +437,5 @@ def main():
             rclpy.shutdown()
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
