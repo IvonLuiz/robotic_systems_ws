@@ -1,50 +1,58 @@
-ARG ROS_DISTRO=jazzy
-FROM ros:${ROS_DISTRO}-ros-base
+FROM ubuntu:24.04
 
-ENV ROS_DISTRO=${ROS_DISTRO}
 ENV DEBIAN_FRONTEND=noninteractive
 ENV WORKSPACE=/root/ur_ws
 
 SHELL ["/bin/bash", "-c"]
 
 # Install dependencies and tools
+ENV DEBIAN_FRONTEND=noninteractive
+ENV LANG=C.UTF-8 LC_ALL=C.UTF-8
+
+# Install required tools and ROS 2 dependencies
 RUN apt-get update && apt-get install -y \
-    git wget nano python3-pip python3-rosdep cmake make \
-    python3-colcon-common-extensions python3-vcstool lsb-release bash \
+    locales \
+    curl \
+    gnupg2 \
+    lsb-release \
+    build-essential \
+    python3-pip \
+    git \
     && rm -rf /var/lib/apt/lists/*
 
-# Install ROS 2 packages
+RUN curl -sSL https://raw.githubusercontent.com/ros/rosdistro/master/ros.key | apt-key add - && \
+    echo "deb http://packages.ros.org/ros2/ubuntu $(lsb_release -cs) main" > /etc/apt/sources.list.d/ros2.list
+
+
 RUN apt-get update && apt-get install -y \
-    ros-${ROS_DISTRO}-moveit \
-    ros-${ROS_DISTRO}-ur-description \
-    ros-${ROS_DISTRO}-ur-msgs \
-    ros-${ROS_DISTRO}-ur-client-library \
-    ros-${ROS_DISTRO}-ur-robot-driver \
-    ros-${ROS_DISTRO}-ur-moveit-config \
-    ros-${ROS_DISTRO}-rviz2 \
-    ros-${ROS_DISTRO}-xacro \
-    ros-${ROS_DISTRO}-ur-* \
+    ros-dev-tools \
+    ros-jazzy-desktop \
+    ros-jazzy-moveit \
+    ros-jazzy-ur-* \
+    ros-jazzy-xacro \
     && rm -rf /var/lib/apt/lists/*
 
-# Setup workspace
 WORKDIR ${WORKSPACE}
 
 COPY . .
 
-RUN rosdep init && \
-    rosdep update || echo "rosdep update completed with warnings"
 
 # Entry script
 RUN echo '#!/bin/bash\n\
-. /opt/ros/${ROS_DISTRO}/setup.sh\n\
+. /opt/ros/jazzy/setup.sh\n\
 . ${WORKSPACE}/install/setup.sh\n\
 exec "$@"' > /entrypoint.sh && chmod +x /entrypoint.sh
 
-RUN . /opt/ros/jazzy/setup.sh && \
-    colcon build
-
 RUN echo "source /opt/ros/jazzy/setup.sh" >> ~/.bashrc
 RUN echo "source ${WORKSPACE}/install/setup.sh" >> ~/.bashrc
+
+SHELL ["/bin/bash", "-c"]
+
+RUN rosdep init && \
+    rosdep update || echo "rosdep update completed with warnings"
+
+RUN . /opt/ros/jazzy/setup.sh && \
+    colcon build
 
 RUN pip3 install numpy scipy --break-system-packages
 
