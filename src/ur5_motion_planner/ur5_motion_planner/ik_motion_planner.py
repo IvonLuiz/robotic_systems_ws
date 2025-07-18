@@ -4,6 +4,7 @@ from rclpy.task import Future
 from action_msgs.msg import GoalStatus
 from geometry_msgs.msg import Pose
 from control_msgs.action import FollowJointTrajectory
+from trajectory_msgs.msg import JointTrajectoryPoint
 from scipy.spatial.transform import Rotation as R
 from ur5_interfaces.msg import PoseList
 import numpy as np
@@ -96,7 +97,7 @@ class IKMotionPlanner(Node):
             "wrist_2_joint",
             "wrist_3_joint",
         ]
-        point = FollowJointTrajectory.JointTrajectoryPoint()
+        point = JointTrajectoryPoint()
         point.positions = joint_angles
         point.time_from_start.sec = 3
 
