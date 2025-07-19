@@ -64,15 +64,10 @@ class UR5Env(gym.Env, Node):
         self.tf_buffer = Buffer()
         self.tf_listener = TransformListener(self.tf_buffer, self)
         
-        # Subscriber to get current joint states
-        self.joint_state_sub = self.create_subscription(
-            JointState,
-            '/joint_states',
-            self.joint_state_callback,
-            10,
-            callback_group=self.callback_group)
-            
+        # Joint state subscriber - will be created/destroyed on demand
+        self.joint_state_sub = None
         self.current_joint_state = None
+        self._joint_state_update_needed = False
         self.robot_joints_names = [
             "shoulder_pan_joint", "shoulder_lift_joint", "elbow_joint",
             "wrist_1_joint", "wrist_2_joint", "wrist_3_joint"
@@ -128,6 +123,9 @@ class UR5Env(gym.Env, Node):
         timeout = self.config.get('ros.joint_state_timeout', 10.0)
         start_time = time.time()
         
+        # Enable joint state updates temporarily to get initial state
+        self._enable_joint_state_updates()
+        
         while self.current_joint_state is None and rclpy.ok():
             # Allow ROS callbacks to be processed
             rclpy.spin_once(self, timeout_sec=0.1)
@@ -141,6 +139,9 @@ class UR5Env(gym.Env, Node):
             self.get_logger().info("Received initial joint states.")
         else:
             self.get_logger().warn("Joint states not received during initialization.")
+        
+        # Disable continuous updates after getting initial state
+        self._disable_joint_state_updates()
         
     def _publish_target_marker(self):
         """Publishes the target marker in RViz."""
@@ -161,6 +162,10 @@ class UR5Env(gym.Env, Node):
         self._publish_target_marker()
 
     def joint_state_callback(self, msg):
+        # Only update if we're expecting joint state updates
+        if not self._joint_state_update_needed:
+            return
+            
         # Reorder the joints to match the order we expect
         joint_positions = [0.0] * len(self.robot_joints_names)
         for i, name in enumerate(self.robot_joints_names):
@@ -168,31 +173,54 @@ class UR5Env(gym.Env, Node):
                 idx = msg.name.index(name)
                 joint_positions[i] = msg.position[idx]
         self.current_joint_state = np.array(joint_positions)
+        self._joint_state_update_needed = False  # We got what we needed
+    
+    def _enable_joint_state_updates(self):
+        """Enable joint state updates by creating subscriber if needed."""
+        if self.joint_state_sub is None:
+            self.joint_state_sub = self.create_subscription(
+                JointState,
+                '/joint_states',
+                self.joint_state_callback,
+                10,
+                callback_group=self.callback_group)
+        self._joint_state_update_needed = True
+    
+    def _disable_joint_state_updates(self):
+        """Disable joint state updates by destroying subscriber."""
+        if self.joint_state_sub is not None:
+            self.destroy_subscription(self.joint_state_sub)
+            self.joint_state_sub = None
+        self._joint_state_update_needed = False
 
     def step(self, action):
         self.episode_step_count += 1
         
-        # 1. Apply Action: Convert velocity action to position target
-        current_angles = self.get_joint_angles()
+        # 1. Get current joint state on demand
+        current_angles = self._get_current_joint_state()
+        
         if current_angles is None:
             return self.observation_space.sample(), 0, False, True, {"error": "Joint states not available"}
 
         # Integrate velocity over a small time step dt
         dt = self.dt
         new_target_angles = current_angles + action * dt
-        
+
         # Clip to joint limits
         new_target_angles = np.clip(new_target_angles, self.joint_limits_lower, self.joint_limits_upper)
 
-        # Send the trajectory to the robot
+        self.get_logger().info(f"Step {self.episode_step_count}")
+        self.get_logger().info(f"Action: {action}")
+        self.get_logger().info(f"Current angles: {current_angles}")
+        self.get_logger().info(f"New target angles: {new_target_angles}")
+
+        # Send the trajectory to the robot and wait for completion
         result = self.send_trajectory_goal(new_target_angles.tolist(), dt)
         if not result:
             self.get_logger().error("Failed to send trajectory goal")
-            return self.observation_space.sample(), 0, False, True, {"error": "Failed to send trajectory goal"}
-        #time.sleep(dt) # Wait for the action to have an effect
-
-
-        # 2. Get New Observation
+            return self.observation_space.sample(), 0-10000, False, True, {"error": "Failed to send trajectory goal"}
+        
+        # 2. Get New Observation after trajectory completion
         observation = self._get_observation()
         if observation is None:
             return self.observation_space.sample(), 0, False, True, {"error": "Failed to get observation"}
@@ -201,13 +229,13 @@ class UR5Env(gym.Env, Node):
         ee_pos = self.get_end_effector_pose()[:3]
         distance_to_target = np.linalg.norm(ee_pos - self.target_position)
         
-        reward = self.reward_max - self.distance_penalty_scale * distance_to_target
-        self.get_logger().info(f"Step {self.episode_step_count}: Distance to target: {distance_to_target:.4f}, Reward: {reward:.4f}")
+        reward = 0 - self.distance_penalty_scale * distance_to_target
+        self.get_logger().info(f"Distance to target: {distance_to_target:.4f}, Reward: {reward:.4f}")
 
         # 4. Check for Termination
         terminated = False
         if distance_to_target < self.goal_tolerance: # Goal reached
-            reward += self.goal_bonus
+            reward = self.goal_bonus
             terminated = True
             self.get_logger().info("Goal Reached!")
 
@@ -245,7 +273,7 @@ class UR5Env(gym.Env, Node):
         return initial_observation, {}
 
     def _get_observation(self):
-        joint_angles = self.get_joint_angles()
+        joint_angles = self._get_current_joint_state()
         ee_transform = self.get_end_effector_pose()
         self.get_logger().info("Getting observation...")
 
@@ -273,6 +301,26 @@ class UR5Env(gym.Env, Node):
             self.get_logger().warn("Joint states have not been received yet.")
             return None
         return self.current_joint_state
+    
+    def _get_current_joint_state(self):
+        """Get current joint state by temporarily enabling updates."""
+        self._enable_joint_state_updates()
+        
+        # Wait for a fresh joint state update
+        timeout = 2.0  # Short timeout for getting joint states
+        start_time = time.time()
+        old_state = self.current_joint_state.copy() if self.current_joint_state is not None else None
+        
+        while rclpy.ok() and time.time() - start_time < timeout:
+            rclpy.spin_once(self, timeout_sec=0.1)
+            
+            # Check if we got a new state (or first state)
+            if self.current_joint_state is not None:
+                if old_state is None or not np.array_equal(self.current_joint_state, old_state):
+                    break
+        
+        self._disable_joint_state_updates()
+        return self.current_joint_state
 
     def get_end_effector_pose(self):
         try:
@@ -297,40 +345,40 @@ class UR5Env(gym.Env, Node):
         goal_msg.trajectory.points.append(trajectory_point)
         
         timeout = self.config.get('ros.action_server_timeout', 20.0)
+        
+        # Send goal
         send_goal_future = self._action_client.send_goal_async(goal_msg)
-        rclpy.spin_until_future_complete(
-            self, send_goal_future, timeout_sec=timeout
-        )
+        rclpy.spin_until_future_complete(self, send_goal_future, timeout_sec=5.0)
         
         if not send_goal_future.done():
-            self.get_logger().error("Failed to send goal")
+            self.get_logger().error("Failed to send goal - timeout")
             return False
 
         goal_handle = send_goal_future.result()
-
         if not goal_handle.accepted:
             self.get_logger().error("Goal was rejected")
             return False
 
-        # Wait for result
+        # Wait for trajectory completion
         self.get_logger().info("Waiting for trajectory execution")
         get_result_future = goal_handle.get_result_async()
-        rclpy.spin_until_future_complete(
-            self, get_result_future, timeout_sec=timeout
-        )
+        rclpy.spin_until_future_complete(self, get_result_future, timeout_sec=timeout)
 
         if not get_result_future.done():
-            self.get_logger().error("Failed to get result")
+            self.get_logger().error("Failed to get result - timeout")
             return False
 
         result = get_result_future.result().result
-        return result.error_code == FollowJointTrajectory.Result.SUCCESSFUL
+        success = result.error_code == FollowJointTrajectory.Result.SUCCESSFUL
+
+        return success
         
 
     def close(self):
         """Cleanup ROS 2 resources."""
         self.get_logger().info("Cleaning up environment.")
         self.destroy_node()
+
 
 def main():
     rclpy.init()
@@ -349,7 +397,7 @@ def main():
         # --- 1. Check the environment ---
         # It will display warnings if something is wrong
         check_env(env)
-        print("\nEnvironment check passed!")
+        env.get_logger().info("\nEnvironment check passed!")
 
         # --- 2. Instantiate and Train the Agent ---
         # Create model with configured parameters
@@ -362,25 +410,23 @@ def main():
             tensorboard_log=tensorboard_log,
             **model_kwargs
         )
-        
-        print("\n--- Starting Training ---")
+
+        env.get_logger().info("\n--- Starting Training ---")
         # Train with configured parameters
         training_kwargs = config.get_training_kwargs()
         model.learn(**training_kwargs)
-        
-        # --- 3. Save the Trained Model ---
         model_path = config.get('training.model_save_path', 'models/sac_ur5_reacher_model.zip')
-        
-        # Create directory if it doesn't exist
         os.makedirs(os.path.dirname(model_path), exist_ok=True)
-        model.save(model_path)
-        print(f"--- Model saved to {model_path} ---")
-
-        # --- 4. Load and Evaluate the Trained Model ---
-        del model # remove to demonstrate saving and loading
+        env.get_logger().info(f"Model will be saved to: {os.path.abspath(model_path)}")
+        print(f"Model will be saved to: {model_path}")
         
-        print("\n--- Loading and Evaluating Trained Model ---")
-        loaded_model = SAC.load(model_path, env=env)
+        
+        model.save(model_path)
+        # --- 4. Load and Evaluate the Trained Model ---
+        #del model # remove to demonstrate saving and loading
+        
+        #print("\n--- Loading and Evaluating Trained Model ---")
+        #model = SAC.load(model_path, env=env)
         eval_episodes = config.get('training.eval_episodes', 10)
 
         for episode in range(eval_episodes):
@@ -389,19 +435,21 @@ def main():
             total_reward = 0
             while not done:
                 # Use the model to predict the best action
-                action, _states = loaded_model.predict(obs, deterministic=True)
+                action, _states = model.predict(obs, deterministic=True)
                 obs, reward, terminated, truncated, info = env.step(action)
                 total_reward += reward
                 done = terminated or truncated
-            print(f"Evaluation Episode {episode + 1} finished with total reward: {total_reward:.2f}")
+            env.get_logger().info(f"Evaluation Episode {episode + 1} finished with total reward: {total_reward:.2f}")
+            model.save(model_path)
 
     except KeyboardInterrupt:
-        print("Training interrupted by user.")
+        env.get_logger().info("Training interrupted by user.")
     finally:
-        print("Closing environment and shutting down ROS.")
+        env.get_logger().info("Closing environment and shutting down ROS.")
         env.close()
         rclpy.shutdown()
         thread.join()
+
 
 if __name__ == '__main__':
     main()

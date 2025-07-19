@@ -10,15 +10,15 @@ environment:
     y_max: 0.2
     z_min: 0.9
     z_max: 0.91
-  goal_tolerance: 0.05  # distance tolerance for reaching the goal
-  action_scale: 0.5  # scale factor for velocity actions (reduced from 1.0)
-  dt: 0.2  # time step for velocity integration (increased from 0.1)
+  goal_tolerance: 0.1  # distance tolerance for reaching the goal
+  action_scale: 1.0  # scale factor for velocity actions (increased for more visible movement)
+  dt: 0.1  # time step for velocity integration (increased for more movement)
 
 # Reward Parameters
 reward:
   max_reward: 100.0
-  distance_penalty_scale: 500.0
-  goal_bonus: 100.0
+  distance_penalty_scale: 50.0
+  goal_bonus: 1000.0
 
 # Model Parameters
 model:
@@ -41,8 +41,8 @@ training:
   log_interval: 4
   eval_episodes: 10
   save_interval: 5000  # Save model every N timesteps
-  tensorboard_log: "./ur5_sac_tensorboard/"
-  model_save_path: "models/sac_ur5_reacher_model.zip"
+  tensorboard_log: "./ur5_sac_tensorboarsd/"
+  model_save_path: "models/sac_ur5_reacher_model_cu.zip"
 
 # Joint Limits (radians)
 joint_limits:
@@ -56,4 +56,4 @@ home_position: [0.0, -1.5708, 0.01, -1.5708, 0.01, 0.01]  # Joint angles in radi
 ros:
   action_server_timeout: 20.0
   joint_state_timeout: 10.0
-  trajectory_execution_time: 2.0  # increased from 1.0 to give robot more time to move
+  trajectory_execution_time: 3.0  # increased for more time for robot to move
