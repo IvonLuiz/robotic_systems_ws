@@ -1,3 +1,4 @@
+import re
 import rclpy
 from rclpy.node import Node
 from rclpy.action import ActionClient
@@ -155,7 +156,7 @@ class UR5Env(gym.Env, Node):
         self.target_marker.pose.orientation.z = 0.0
         
         self.target_marker_pub.publish(self.target_marker)
-        self.get_logger().info(f"Published target marker at position: {self.target_position}")
+        self.get_logger().debug(f"Published target marker at position: {self.target_position}")
 
     def _update_target_marker(self):
         """Updates the target marker position in RViz."""
@@ -209,21 +210,26 @@ class UR5Env(gym.Env, Node):
         # Clip to joint limits
         new_target_angles = np.clip(new_target_angles, self.joint_limits_lower, self.joint_limits_upper)
 
-        self.get_logger().info(f"Step {self.episode_step_count}")
-        self.get_logger().info(f"Action: {action}")
-        self.get_logger().info(f"Current angles: {current_angles}")
-        self.get_logger().info(f"New target angles: {new_target_angles}")
+        self.get_logger().debug(f"Step {self.episode_step_count}")
+        self.get_logger().debug(f"Action: {action}")
+        self.get_logger().debug(f"Current angles: {current_angles}")
+        self.get_logger().debug(f"New target angles: {new_target_angles}")
 
         # Send the trajectory to the robot and wait for completion
         result = self.send_trajectory_goal(new_target_angles.tolist(), dt)
         if not result:
-            self.get_logger().error("Failed to send trajectory goal")
-            return self.observation_space.sample(), 0-10000, False, True, {"error": "Failed to send trajectory goal"}
-        
+            reward = -10000
+            terminated = False
+            truncated = True
+            return self.observation_space.sample(), -10000, terminated, truncated, {"error": "Failed to send trajectory goal. Penalizing step with -10000 reward and resetting."}
+
         # 2. Get New Observation after trajectory completion
         observation = self._get_observation()
         if observation is None:
-            return self.observation_space.sample(), 0, False, True, {"error": "Failed to get observation"}
+            reward = 0
+            terminated = False
+            truncated = True
+            return self.observation_space.sample(), reward, terminated, truncated, {"error": "Failed to get observation"}
 
         # 3. Calculate Reward
         ee_pos = self.get_end_effector_pose()[:3]
@@ -256,8 +262,8 @@ class UR5Env(gym.Env, Node):
         result = self.send_trajectory_goal(home_joint_angles) # returns True if successful
 
         if not result:
-            self.get_logger().error("Failed to send home joint angles")
-            return None
+            self.get_logger().error("Failed to send home joint angles on reset. Trying again...")
+            return self.reset()
 
         # Generate a new random target
         self.target_position = self._generate_random_target()
@@ -275,13 +281,13 @@ class UR5Env(gym.Env, Node):
     def _get_observation(self):
         joint_angles = self._get_current_joint_state()
         ee_transform = self.get_end_effector_pose()
-        self.get_logger().info("Getting observation...")
+        self.get_logger().debug("Getting observation...")
 
         if joint_angles is None or ee_transform is None:
             self.get_logger().warn("Could not get complete observation.")
             return None
 
-        self.get_logger().info(f"Joint Angles: {joint_angles}, End Effector Pose: {ee_transform}")
+        self.get_logger().debug(f"Joint Angles: {joint_angles}, End Effector Pose: {ee_transform}")
 
         ee_pos = ee_transform[:3]
         vector_to_target = self.target_position - ee_pos
@@ -324,6 +330,8 @@ class UR5Env(gym.Env, Node):
 
     def get_end_effector_pose(self):
         try:
+            # this transformation assumes the end effector is named 'tool0', 
+            # and gets the position and orientation relative to the base_link
             transform = self.tf_buffer.lookup_transform('base_link', 'tool0', rclpy.time.Time())
             pos = transform.transform.translation
             rot = transform.transform.rotation
@@ -360,7 +368,7 @@ class UR5Env(gym.Env, Node):
             return False
 
         # Wait for trajectory completion
-        self.get_logger().info("Waiting for trajectory execution")
+        self.get_logger().debug("Waiting for trajectory execution")
         get_result_future = goal_handle.get_result_async()
         rclpy.spin_until_future_complete(self, get_result_future, timeout_sec=timeout)
 
@@ -372,7 +380,6 @@ class UR5Env(gym.Env, Node):
         success = result.error_code == FollowJointTrajectory.Result.SUCCESSFUL
 
         return success
-        
 
     def close(self):
         """Cleanup ROS 2 resources."""
@@ -393,62 +400,60 @@ def main():
     thread = threading.Thread(target=executor.spin, daemon=True)
     thread.start()
 
-    try:
-        # --- 1. Check the environment ---
-        # It will display warnings if something is wrong
-        check_env(env)
-        env.get_logger().info("\nEnvironment check passed!")
+    # --- 1. Check the environment ---
+    # It will display warnings if something is wrong
+    print("Checking environment...")
+    check_env(env)
+    print("Environment check passed!")
 
-        # --- 2. Instantiate and Train the Agent ---
-        # Create model with configured parameters
-        model_kwargs = config.get_model_kwargs()
-        tensorboard_log = config.get('training.tensorboard_log', './ur5_sac_tensorboard/')
-        
-        model = SAC(
-            config.get('model.policy', 'MlpPolicy'),
-            env,
-            tensorboard_log=tensorboard_log,
-            **model_kwargs
-        )
+    # --- 2. Instantiate and Train the Agent ---
+    # Create model with configured parameters
+    model_kwargs = config.get_model_kwargs()
+    tensorboard_log = config.get('training.tensorboard_log', './ur5_sac_tensorboard/')
+    
+    print("Creating SAC model...")
+    model = SAC(
+        config.get('model.policy', 'MlpPolicy'),
+        env,
+        tensorboard_log=tensorboard_log,
+        **model_kwargs
+    )
+    model_path = config.get('training.model_save_path', 'models/sac_ur5_reacher_model.zip')
+    os.makedirs(os.path.dirname(model_path), exist_ok=True)
 
-        env.get_logger().info("\n--- Starting Training ---")
-        # Train with configured parameters
-        training_kwargs = config.get_training_kwargs()
-        model.learn(**training_kwargs)
-        model_path = config.get('training.model_save_path', 'models/sac_ur5_reacher_model.zip')
-        os.makedirs(os.path.dirname(model_path), exist_ok=True)
-        env.get_logger().info(f"Model will be saved to: {os.path.abspath(model_path)}")
-        print(f"Model will be saved to: {model_path}")
-        
-        
-        model.save(model_path)
-        # --- 4. Load and Evaluate the Trained Model ---
-        #del model # remove to demonstrate saving and loading
-        
-        #print("\n--- Loading and Evaluating Trained Model ---")
-        #model = SAC.load(model_path, env=env)
-        eval_episodes = config.get('training.eval_episodes', 10)
+    print("Starting Training...")
+    # Train with configured parameters
+    training_kwargs = config.get_training_kwargs()
+    print(f"Training with parameters: {training_kwargs}")
+    model.learn(**training_kwargs)
+    print(f"Model will be saved to: {os.path.abspath(model_path)}")
+    model.save(model_path)
+    #del model # remove to demonstrate saving and loading
+    
+    #print("\n--- Loading and Evaluating Trained Model ---")
+    #model = SAC.load(model_path, env=env)
+    eval_episodes = config.get('training.eval_episodes', 10)
 
-        for episode in range(eval_episodes):
-            obs, info = env.reset()
-            done = False
-            total_reward = 0
-            while not done:
-                # Use the model to predict the best action
-                action, _states = model.predict(obs, deterministic=True)
-                obs, reward, terminated, truncated, info = env.step(action)
-                total_reward += reward
-                done = terminated or truncated
-            env.get_logger().info(f"Evaluation Episode {episode + 1} finished with total reward: {total_reward:.2f}")
-            model.save(model_path)
+    print(f"Starting evaluation with {eval_episodes} episodes...")
+    for episode in range(eval_episodes):
+        obs, info = env.reset()
+        done = False
+        total_reward = 0
+        while not done:
+            # Use the model to predict the best action
+            action, _states = model.predict(obs, deterministic=True)
+            obs, reward, terminated, truncated, info = env.step(action)
+            total_reward += reward
+            done = terminated or truncated
+        print(f"Evaluation Episode {episode + 1} finished with total reward: {total_reward:.2f}")
 
-    except KeyboardInterrupt:
-        env.get_logger().info("Training interrupted by user.")
-    finally:
-        env.get_logger().info("Closing environment and shutting down ROS.")
-        env.close()
-        rclpy.shutdown()
-        thread.join()
+
+    print("Closing environment and shutting down ROS.")
+    # Give a moment for logs to flush
+    time.sleep(0.1)
+    env.close()
+    rclpy.shutdown()
+    thread.join()
 
 
 if __name__ == '__main__':
