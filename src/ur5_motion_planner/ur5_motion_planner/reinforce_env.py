@@ -284,18 +284,22 @@ class UR5Env(gym.Env, Node):
             self.get_logger().warn(f'Could not get transform: {ex}')
             return None
 
-    def send_trajectory_goal(self, joint_angles, dt=2.0):
+    def send_trajectory_goal(self, joint_angles, dt=None):
+        if dt is None:
+            dt = self.config.get('ros.trajectory_execution_time', 1.0)
+            
         goal_msg = FollowJointTrajectory.Goal()
         trajectory_point = JointTrajectoryPoint()
         trajectory_point.positions = joint_angles
-        trajectory_point.time_from_start = Duration(sec=1, nanosec=0)
+        trajectory_point.time_from_start = Duration(sec=int(dt), nanosec=int((dt % 1) * 1e9))
         
         goal_msg.trajectory.joint_names = self.robot_joints_names
         goal_msg.trajectory.points.append(trajectory_point)
         
+        timeout = self.config.get('ros.action_server_timeout', 20.0)
         send_goal_future = self._action_client.send_goal_async(goal_msg)
         rclpy.spin_until_future_complete(
-            self, send_goal_future, timeout_sec=20
+            self, send_goal_future, timeout_sec=timeout
         )
         
         if not send_goal_future.done():
@@ -312,7 +316,7 @@ class UR5Env(gym.Env, Node):
         self.get_logger().info("Waiting for trajectory execution")
         get_result_future = goal_handle.get_result_async()
         rclpy.spin_until_future_complete(
-            self, get_result_future, timeout_sec=20
+            self, get_result_future, timeout_sec=timeout
         )
 
         if not get_result_future.done():
@@ -331,6 +335,9 @@ class UR5Env(gym.Env, Node):
 def main():
     rclpy.init()
     
+    # Load configuration
+    config = RLConfig()
+    
     env = UR5Env()
     
     executor = MultiThreadedExecutor()
@@ -345,20 +352,28 @@ def main():
         print("\nEnvironment check passed!")
 
         # --- 2. Instantiate and Train the Agent ---
-        # SAC (Soft Actor-Critic) is a good choice for continuous control tasks
+        # Create model with configured parameters
+        model_kwargs = config.get_model_kwargs()
+        tensorboard_log = config.get('training.tensorboard_log', './ur5_sac_tensorboard/')
+        
         model = SAC(
-            "MlpPolicy",
+            config.get('model.policy', 'MlpPolicy'),
             env,
-            verbose=1,
-            tensorboard_log="./ur5_sac_tensorboard/"
+            tensorboard_log=tensorboard_log,
+            **model_kwargs
         )
         
         print("\n--- Starting Training ---")
-        # Train for a specified number of steps
-        model.learn(total_timesteps=20000, log_interval=4)
+        # Train with configured parameters
+        training_kwargs = config.get_training_kwargs()
+        model.learn(**training_kwargs)
         
         # --- 3. Save the Trained Model ---
-        model_path = "models/sac_ur5_reacher_model.zip"
+        model_path = config.get('training.model_save_path', 'models/sac_ur5_reacher_model.zip')
+        
+        # Create directory if it doesn't exist
+        os.makedirs(os.path.dirname(model_path), exist_ok=True)
+        model.save(model_path)
         print(f"--- Model saved to {model_path} ---")
 
         # --- 4. Load and Evaluate the Trained Model ---
@@ -366,9 +381,9 @@ def main():
         
         print("\n--- Loading and Evaluating Trained Model ---")
         loaded_model = SAC.load(model_path, env=env)
-        episodes = 100
+        eval_episodes = config.get('training.eval_episodes', 10)
 
-        for episode in range(episodes):
+        for episode in range(eval_episodes):
             obs, info = env.reset()
             done = False
             total_reward = 0
@@ -378,7 +393,6 @@ def main():
                 obs, reward, terminated, truncated, info = env.step(action)
                 total_reward += reward
                 done = terminated or truncated
-            model.save(model_path)
             print(f"Evaluation Episode {episode + 1} finished with total reward: {total_reward:.2f}")
 
     except KeyboardInterrupt:
