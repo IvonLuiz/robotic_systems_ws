@@ -17,12 +17,13 @@ class Validator(Node):
         self.get_logger().info("Motion Planner Validator Node has been started.")
 
         self.declare_parameter("random_seed", 42)
-        self.declare_parameter("pose_list_topic", "/pose_list_ik")
+        self.declare_parameter("pose_list_topic", "/pose_list")
         self.declare_parameter("amount_of_poses", 10)
         self.declare_parameter("pose_threshold", 0.1)
         self.declare_parameter("sleep_duration", 5)
         self.declare_parameter(
-            "filename", f"./results/validation_results_{self.get_clock().now().nanoseconds}.txt"
+            "filename",
+            f"./results/validation_results_{self.get_clock().now().nanoseconds}.txt",
         )
         random.seed(self.get_parameter("random_seed").value)
 
@@ -87,21 +88,28 @@ class Validator(Node):
         return False
 
     def generate_random_pose_list(self) -> PoseList:
-        """Generate a random pose for testing purposes."""
+        """Generate a random pose in the positive quadrant of RViz (positive X, Y, Z)."""
         pose_list = PoseList()
         amount_of_poses = self.get_parameter("amount_of_poses").value
 
         for _ in range(amount_of_poses):
             pose = Pose()
-            pose.position.x = random.uniform(-1.0, 1.0)
-            pose.position.y = random.uniform(-1.0, 1.0)
-            pose.position.z = random.uniform(0.0, 1.0)
+            pose.position.x = random.uniform(0.1, 1.0)  # Only positive X
+            pose.position.y = random.uniform(0.1, 1.0)  # Only positive Y
+            pose.position.z = random.uniform(
+                0.1, 1.0
+            )  # Positive Z (UR5 can't reach below base)
 
-            # Random orientation as quaternion
-            pose.orientation.x = random.uniform(-1.0, 1.0)
-            pose.orientation.y = random.uniform(-1.0, 1.0)
-            pose.orientation.z = random.uniform(-1.0, 1.0)
-            pose.orientation.w = random.uniform(0.0, 1.0)
+            # Optional: Normalize orientation quaternion to avoid invalid rotations
+            qx = random.uniform(-1.0, 1.0)
+            qy = random.uniform(-1.0, 1.0)
+            qz = random.uniform(-1.0, 1.0)
+            qw = random.uniform(-1.0, 1.0)
+            norm = (qx**2 + qy**2 + qz**2 + qw**2) ** 0.5
+            pose.orientation.x = qx / norm
+            pose.orientation.y = qy / norm
+            pose.orientation.z = qz / norm
+            pose.orientation.w = qw / norm
 
             pose_list.poses.append(pose)
 

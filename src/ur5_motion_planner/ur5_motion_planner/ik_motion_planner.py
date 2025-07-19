@@ -43,7 +43,7 @@ class IKMotionPlanner(Node):
         self.get_logger().info("IKMotionPlanner node has been started.")
 
         self.declare_parameter("is_left_shoulder", True)
-        self.declare_parameter("is_elbow_up", True)
+        self.declare_parameter("is_elbow_up", False)
         self.declare_parameter(
             "controller_name",
             "/scaled_joint_trajectory_controller/follow_joint_trajectory",
@@ -80,6 +80,9 @@ class IKMotionPlanner(Node):
         self.get_logger().info(f"Received {len(msg.poses)} poses.")
         self.pose_list = msg.poses
         joint_angles = self.calculate_inverse_kinematics(self.pose_list[0])
+        self.get_logger().info(
+            f"Calculated joint angles for first pose: {np.degrees(joint_angles)}"
+        )
         self._execute_trajectory(joint_angles)
 
     def _execute_trajectory(self, joint_angles: list[float]):
@@ -157,10 +160,16 @@ class IKMotionPlanner(Node):
             self.get_logger().info("Action succeeded.")
             time.sleep(1)  # Wait for a second before processing the next pose
             self.get_logger().info("Processing next pose in the list if available.")
+            self.get_logger().info(
+                f"Remaining poses in the list: {len(self.pose_list)}"
+            )
             if self.pose_list:
                 next_pose = self.pose_list[0].position
                 self.get_logger().info(f"Next pose to process: {next_pose}")
                 joint_angles = self.calculate_inverse_kinematics(next_pose)
+                self.get_logger().info(
+                    f"Calculated joint angles for next pose: {np.degrees(joint_angles)}"
+                )
                 self._execute_trajectory(joint_angles)
         else:
             if result.error_code != FollowJointTrajectory.Result.SUCCESSFUL:
