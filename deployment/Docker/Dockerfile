@@ -54,7 +54,7 @@ RUN rosdep init && \
 RUN . /opt/ros/jazzy/setup.sh && \
     colcon build
 
-RUN pip3 install numpy scipy --break-system-packages
+RUN pip3 install numpy scipy gymnasium 'stable-baselines3[extra]' tensorboard torch --break-system-packages
 
 # Set the entrypoint
 ENTRYPOINT ["bash"]

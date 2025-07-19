@@ -1,4 +1,5 @@
 from setuptools import find_packages, setup
+import os
 
 package_name = "ur5_motion_planner"
 
@@ -16,7 +17,9 @@ setup(
         "scipy",
         "transformations",
         "gymnasium",
-        "stable-baselines3",
+        "stable-baselines3[extra]",
+        "tensorboard",
+        "torch",
     ],
     zip_safe=True,
     maintainer="carlos",
@@ -30,7 +33,6 @@ setup(
             "validator = ur5_motion_planner.validator:main",
             "dataset_generator_node = ur5_motion_planner.dataset_generator_node:main",
             "ur5_reinforce_env = ur5_motion_planner.reinforce_env:main",
-            "ur5_reinforce_train = ur5_motion_planner.train:main",
         ],
     },
 )

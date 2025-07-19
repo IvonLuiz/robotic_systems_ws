@@ -10,6 +10,10 @@ from gymnasium import spaces
 import numpy as np
 import threading
 import time
+import os
+
+from geometry_msgs.msg import Pose
+from visualization_msgs.msg import Marker
 
 from control_msgs.action import FollowJointTrajectory
 from trajectory_msgs.msg import JointTrajectory, JointTrajectoryPoint
@@ -22,6 +26,8 @@ from sensor_msgs.msg import JointState
 from stable_baselines3 import SAC
 from stable_baselines3.common.env_checker import check_env
 
+from .config_loader import RLConfig
+
 class UR5Env(gym.Env, Node):
     """
     Reinforcement Learning Environment for a UR5 robot in Gazebo.
@@ -29,19 +35,19 @@ class UR5Env(gym.Env, Node):
     """
     metadata = {'render_modes': ['human']}
 
-    def __init__(self):
-        # Initialize the ROS 2 Node part in a ReentrantCallbackGroup
-        # to allow for parallel callbacks and service calls
+    def __init__(self, config_file="rl_config.yaml"):
         Node.__init__(self, 'ur5_rl_environment')
         self.callback_group = ReentrantCallbackGroup()
-        
-        # Initialize the Gym Environment part
         gym.Env.__init__(self)
 
+        # Load configuration
+        self.config = RLConfig(config_file)
+
         # --- Gym Environment Setup ---
-        # Action: 6 joint velocities [-1.0, 1.0] rad/s
-        action_low = np.array([-1.0] * 6, dtype=np.float32)
-        action_high = np.array([1.0] * 6, dtype=np.float32)
+        # Action: 6 joint velocities [-1.0, 1.0] rad/s scaled by action_scale
+        action_scale = self.config.get('environment.action_scale', 1.0)
+        action_low = np.array([-action_scale] * 6, dtype=np.float32)
+        action_high = np.array([action_scale] * 6, dtype=np.float32)
         self.action_space = spaces.Box(low=action_low, high=action_high)
 
         # Observation: 6 joint angles + 3 (vector to target)
@@ -71,23 +77,88 @@ class UR5Env(gym.Env, Node):
             "shoulder_pan_joint", "shoulder_lift_joint", "elbow_joint",
             "wrist_1_joint", "wrist_2_joint", "wrist_3_joint"
         ]
+
+        # RVIZ visualization setup
+        self.target_marker_pub = self.create_publisher(
+            Marker, 
+            '/target_marker', 
+            10,
+            callback_group=self.callback_group
+        )
+
+        self.target_marker = Marker()
+        self.target_marker.header.frame_id = "base_link"
+        self.target_marker.type = Marker.SPHERE
+        self.target_marker.action = Marker.ADD
+        self.target_marker.scale.x = 0.1
+        self.target_marker.scale.y = 0.1
+        self.target_marker.scale.z = 0.1
+        self.target_marker.color.r = 1.0
+        self.target_marker.color.g = 0.0
+        self.target_marker.color.b = 0.0
+        self.target_marker.color.a = 0.8
+        self.target_marker.id = 0
+
+        self._wait_services_ready()
+
+        # RL State
+        self.episode_step_count = 0
+        self.max_steps_per_episode = self.config.get('environment.max_steps_per_episode', 200)
         
-        # Waiting for action server and for the first joint state message to initialize current_joint_state
+        # Get configured parameters
+        self.dt = self.config.get('environment.dt', 0.1)
+        self.goal_tolerance = self.config.get('environment.goal_tolerance', 0.05)
+        self.joint_limits_lower = np.array(self.config.get('joint_limits.lower', [-np.pi] * 6))
+        self.joint_limits_upper = np.array(self.config.get('joint_limits.upper', [np.pi] * 6))
+        self.home_position = self.config.get('home_position', [0, -np.pi/2, 0.01, -np.pi/2, 0.01, 0.01])
+        
+        # Reward parameters
+        self.reward_max = self.config.get('reward.max_reward', 100.0)
+        self.distance_penalty_scale = self.config.get('reward.distance_penalty_scale', 500.0)
+        self.goal_bonus = self.config.get('reward.goal_bonus', 100.0)
+
+    def _wait_services_ready(self):
+        # Wait for essential connections
         self.get_logger().info("Waiting for Action Server...")
         self._action_client.wait_for_server()
         self.get_logger().info("Action Server is ready.")
-        self.get_logger().info("Waiting for Joint States...")
-        while self.current_joint_state is None:
+        
+        # Wait for initial joint states with timeout
+        self.get_logger().info("Waiting for initial joint states...")
+        timeout = self.config.get('ros.joint_state_timeout', 10.0)
+        start_time = time.time()
+        
+        while self.current_joint_state is None and rclpy.ok():
+            # Allow ROS callbacks to be processed
             rclpy.spin_once(self, timeout_sec=0.1)
-            if self.current_joint_state is not None:
-                self.get_logger().info("Received initial joint states.")
-            else:
-                self.get_logger().warn("Waiting for joint states...")
+            
+            # Check timeout
+            if time.time() - start_time > timeout:
+                self.get_logger().warn("Timeout waiting for initial joint states. Continuing anyway...")
+                break
+                
+        if self.current_joint_state is not None:
+            self.get_logger().info("Received initial joint states.")
+        else:
+            self.get_logger().warn("Joint states not received during initialization.")
+        
+    def _publish_target_marker(self):
+        """Publishes the target marker in RViz."""
+        self.target_marker.header.stamp = self.get_clock().now().to_msg()
+        self.target_marker.pose.position.x = float(self.target_position[0])
+        self.target_marker.pose.position.y = float(self.target_position[1])
+        self.target_marker.pose.position.z = float(self.target_position[2])
+        self.target_marker.pose.orientation.w = 1.0
+        self.target_marker.pose.orientation.x = 0.0
+        self.target_marker.pose.orientation.y = 0.0
+        self.target_marker.pose.orientation.z = 0.0
+        
+        self.target_marker_pub.publish(self.target_marker)
+        self.get_logger().info(f"Published target marker at position: {self.target_position}")
 
-        # --- RL State ---
-        self.target_position = self._generate_random_target()
-        self.episode_step_count = 0
-        self.max_steps_per_episode = 200 # Timeout after 200 steps
+    def _update_target_marker(self):
+        """Updates the target marker position in RViz."""
+        self._publish_target_marker()
 
     def joint_state_callback(self, msg):
         # Reorder the joints to match the order we expect
@@ -103,18 +174,15 @@ class UR5Env(gym.Env, Node):
         
         # 1. Apply Action: Convert velocity action to position target
         current_angles = self.get_joint_angles()
-        if current_angles is None: # Handle case where joint states are not yet received
-            # Return a dummy response or wait
+        if current_angles is None:
             return self.observation_space.sample(), 0, False, True, {"error": "Joint states not available"}
 
         # Integrate velocity over a small time step dt
-        dt = 0.1 
+        dt = self.dt
         new_target_angles = current_angles + action * dt
         
-        # Clip to joint limits to be safe (TODO: Define proper limits)
-        lower_limits = np.array([-np.pi, -np.pi, -np.pi, -np.pi, -np.pi, -np.pi])
-        upper_limits = np.array([np.pi, np.pi, np.pi, np.pi, np.pi, np.pi])
-        new_target_angles = np.clip(new_target_angles, lower_limits, upper_limits)
+        # Clip to joint limits
+        new_target_angles = np.clip(new_target_angles, self.joint_limits_lower, self.joint_limits_upper)
 
         # Send the trajectory to the robot
         result = self.send_trajectory_goal(new_target_angles.tolist(), dt)
@@ -133,12 +201,13 @@ class UR5Env(gym.Env, Node):
         ee_pos = self.get_end_effector_pose()[:3]
         distance_to_target = np.linalg.norm(ee_pos - self.target_position)
         
-        reward = -distance_to_target  # Dense reward
+        reward = self.reward_max - self.distance_penalty_scale * distance_to_target
+        self.get_logger().info(f"Step {self.episode_step_count}: Distance to target: {distance_to_target:.4f}, Reward: {reward:.4f}")
 
         # 4. Check for Termination
         terminated = False
-        if distance_to_target < 0.05: # Goal reached
-            reward += 100.0
+        if distance_to_target < self.goal_tolerance: # Goal reached
+            reward += self.goal_bonus
             terminated = True
             self.get_logger().info("Goal Reached!")
 
@@ -155,14 +224,7 @@ class UR5Env(gym.Env, Node):
         self.episode_step_count = 0
 
         # Reset robot to a home position
-        home_joint_angles = [
-            0,
-            -np.pi / 2,
-            0.01,
-            -np.pi / 2,
-            0.01,
-            0.01
-        ]
+        home_joint_angles = self.home_position
         result = self.send_trajectory_goal(home_joint_angles) # returns True if successful
 
         if not result:
@@ -171,12 +233,12 @@ class UR5Env(gym.Env, Node):
 
         # Generate a new random target
         self.target_position = self._generate_random_target()
+        self._update_target_marker()
         self.get_logger().info(f"New target generated at: {self.target_position}")
 
         initial_observation = self._get_observation()
         if initial_observation is None:
-            # Handle the error case, maybe by retrying
-            self.get_logger().error("Failed to get initial observation during reset. Trying again.")
+            self.get_logger().error("Failed to get initial observation during reset. Retrying...")
             time.sleep(0.5)
             return self.reset(seed=seed, options=options)
 
@@ -185,22 +247,25 @@ class UR5Env(gym.Env, Node):
     def _get_observation(self):
         joint_angles = self.get_joint_angles()
         ee_transform = self.get_end_effector_pose()
+        self.get_logger().info("Getting observation...")
 
         if joint_angles is None or ee_transform is None:
             self.get_logger().warn("Could not get complete observation.")
             return None
-        
+
+        self.get_logger().info(f"Joint Angles: {joint_angles}, End Effector Pose: {ee_transform}")
+
         ee_pos = ee_transform[:3]
         vector_to_target = self.target_position - ee_pos
-        
+
         return np.concatenate([joint_angles, vector_to_target]).astype(np.float32)
 
     def _generate_random_target(self):
         # Generate a reachable (x, y, z) position within the workspace
-        # These are example bounds, you should define a proper workspace
-        x = np.random.uniform(0.3, 0.6)
-        y = np.random.uniform(-0.4, 0.4)
-        z = np.random.uniform(0.2, 0.5)
+        bounds = self.config.get('environment.workspace_bounds', {})
+        x = np.random.uniform(bounds.get('x_min', -0.21), bounds.get('x_max', 0.2))
+        y = np.random.uniform(bounds.get('y_min', -0.21), bounds.get('y_max', 0.2))
+        z = np.random.uniform(bounds.get('z_min', 0.9), bounds.get('z_max', 0.91))
         return np.array([x, y, z])
 
     def get_joint_angles(self):
@@ -260,6 +325,7 @@ class UR5Env(gym.Env, Node):
 
     def close(self):
         """Cleanup ROS 2 resources."""
+        self.get_logger().info("Cleaning up environment.")
         self.destroy_node()
 
 def main():
@@ -293,7 +359,6 @@ def main():
         
         # --- 3. Save the Trained Model ---
         model_path = "models/sac_ur5_reacher_model.zip"
-        model.save(model_path)
         print(f"--- Model saved to {model_path} ---")
 
         # --- 4. Load and Evaluate the Trained Model ---
@@ -301,8 +366,9 @@ def main():
         
         print("\n--- Loading and Evaluating Trained Model ---")
         loaded_model = SAC.load(model_path, env=env)
+        episodes = 100
 
-        for episode in range(10): # Evaluate for 10 episodes
+        for episode in range(episodes):
             obs, info = env.reset()
             done = False
             total_reward = 0
@@ -312,6 +378,7 @@ def main():
                 obs, reward, terminated, truncated, info = env.step(action)
                 total_reward += reward
                 done = terminated or truncated
+            model.save(model_path)
             print(f"Evaluation Episode {episode + 1} finished with total reward: {total_reward:.2f}")
 
     except KeyboardInterrupt:
