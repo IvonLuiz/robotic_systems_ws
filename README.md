@@ -128,3 +128,14 @@ ros2 run ur5_machine_learning dataset_generator_node --num-points 10000 --angle-
 ```
 The parameters can be changed accordingly, or left as default (1000 steps and 45 degrees).
 Note: the random angle step used in the code will be from [-angle_step, +angle_step].
+
+
+## Running Validator
+
+To run the validator, you can use the following command:
+
+```bash
+ros2 run ur5_motion_planner validator
+```
+
+This will start the validator node, which will generate a random pose and check if the solution is valid. The validator will output the results to the console and log the results to a file.
