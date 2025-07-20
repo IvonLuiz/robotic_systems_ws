@@ -219,12 +219,6 @@ class UR5Env(gym.Env, Node):
 
         # Send the trajectory to the robot and wait for completion
         result = self.send_trajectory_goal(new_target_angles.tolist(), dt)
-        if not result:
-            reward = -10000
-            terminated = False
-            truncated = True
-            self.get_logger().error("Penalizing step with -10000 reward and resetting.")
-            return self.observation_space.sample(), reward, terminated, truncated, {"error": "Failed to send trajectory goal. Penalizing step with -10000 reward and resetting."}
 
         # 2. Get New Observation after trajectory completion
         observation = self._get_observation()
@@ -233,6 +227,12 @@ class UR5Env(gym.Env, Node):
             terminated = False
             truncated = True
             return self.observation_space.sample(), reward, terminated, truncated, {"error": "Failed to get observation"}
+        if not result:
+            reward = -1000
+            terminated = False
+            truncated = True
+            self.get_logger().error("Penalizing step with -1000 reward and resetting.")
+            return observation, reward, terminated, truncated, {"error": "Failed to send trajectory goal. Penalizing step with -1000 reward and resetting."}
 
         # 3. Calculate Reward
         reward, terminated = self.calculate_reward()
@@ -255,7 +255,8 @@ class UR5Env(gym.Env, Node):
         Calculate the reward based on:
             1 - current distance to the target
             2 - if the distance from target has increased, apply a penalty, if decreased, reward
-            3 - if goal is reached, apply a big bonus
+            3 - amount of steps taken to reach the goal
+            4 - if goal is reached, apply a big bonus
         '''
         reward = 0
         distance_penalty = self.distance_penalty_scale
@@ -265,6 +266,12 @@ class UR5Env(gym.Env, Node):
 
         # 1)
         curr_target_dist = self._calculate_target_dist()
+        if curr_target_dist <= 0.3:
+            reward += 0.3 * (1 / curr_target_dist)
+        if curr_target_dist <= 0.2:
+            reward += 0.8 * (1 / curr_target_dist)
+        if curr_target_dist <= 0.1:
+            reward += 1.1 * (1 / curr_target_dist)
         reward += (- distance_penalty) * curr_target_dist **2
 
         # 2)
@@ -272,16 +279,21 @@ class UR5Env(gym.Env, Node):
             # This value is positive when getting closer
             improvement = self.last_target_dist - curr_target_dist
             # Apply penalty if distance increased, reward if decreased
-            reward += closer_reward_scale * improvement
+            reward += 4*closer_reward_scale * improvement
 
         self.last_target_dist = curr_target_dist
 
         # 3)
+        if self.episode_step_count > 0:
+            # Penalize for taking too many steps
+            reward -= 0.01 * self.episode_step_count
+
+        # 4)
         if curr_target_dist < self.goal_tolerance: # Goal reached
             reward += self.goal_bonus
             terminated = True
 
-        self.get_logger().info(f"Distance to target: {curr_target_dist:.4f}, diff: {improvement:.4f}, Reward: {reward:.4f}", throttle_duration_sec=3)
+        self.get_logger().info(f"Distance to target: {curr_target_dist:.4f}, diff: {improvement:.4f}, Reward: {reward:.4f}", throttle_duration_sec=1)
 
         return reward, terminated
 
@@ -533,12 +545,15 @@ def main():
     os.makedirs(os.path.dirname(model_path), exist_ok=True)
 
     print("----Starting Training----")
+    start_time = time.time()
     # Train with configured parameters
     training_kwargs = config.get_training_kwargs()
     print(f"Training with parameters: {training_kwargs}")
     model.learn(**training_kwargs)
     print(f"Model will be saved to: {os.path.abspath(model_path)}")
     model.save(model_path)
+    end_time = time.time()
+    print(f"Training completed in {end_time - start_time:.2f} seconds.")
 
     #model = SAC.load(model_path, env=env)
 

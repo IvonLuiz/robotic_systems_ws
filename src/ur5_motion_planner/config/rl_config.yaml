@@ -4,13 +4,13 @@
 environment:
   max_steps_per_episode: 200
   workspace_bounds:   # where the target will spawn
-    x_min: 0.2
+    x_min: -0.2
     x_max: 0.2
-    y_min: 0.2
+    y_min: -0.2
     y_max: 0.2
-    z_min: 0.9
+    z_min: 0.7
     z_max: 0.9
-  goal_tolerance: 0.1  # distance tolerance for reaching the goal (current testing)
+  goal_tolerance: 0.05  # distance tolerance for reaching the goal (current testing)
   action_scale: 1.0  # scale factor for velocity actions (increased for more visible movement)
   dt: 0.1  # time step for velocity integration (increased for more movement)
 
@@ -51,11 +51,11 @@ model:
 
 # Training Parameters
 training:
-  total_timesteps: 5000
+  total_timesteps: 50000
   log_interval: 4
-  eval_episodes: 10
+  eval_episodes: 5
   tensorboard_log: "./ur5_tensorboard/"
-  model_save_path: "models/ur5_reacher_model_updated.zip"
+  model_save_path: "models/ur5_reacher_model_100000.zip"
 
 # Joint Limits (radians)
 joint_limits:
