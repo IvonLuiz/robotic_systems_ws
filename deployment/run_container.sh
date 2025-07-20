@@ -28,31 +28,47 @@ xhost +local:docker > /dev/null
 
 # Check for NVIDIA GPU
 if command -v nvidia-smi &> /dev/null; then
-    GPU_FLAGS="--gpus all -e NVIDIA_DRIVER_CAPABILITIES=all"
     echo "NVIDIA GPU detected. Enabling GPU acceleration."
+    echo "Starting ROS2 ${ROS_DISTRO} container..."
+    
+    docker run -it --rm \
+        --name "${CONTAINER_NAME}" \
+        --env="DISPLAY" \
+        --env="QT_X11_NO_MITSHM=1" \
+        --env="XAUTHORITY=${XAUTH}" \
+        --env="ROS_DISTRO=${ROS_DISTRO}" \
+        --env="WORKSPACE=/root/ur_ws" \
+        --volume="${XSOCK}:${XSOCK}:rw" \
+        --volume="${XAUTH}:${XAUTH}:rw" \
+        --volume="${WORKSPACE_DIR}:/root/ur_ws:rw" \
+        --env="ROS_DOMAIN_ID=42" \
+        --env="UROBOT_IP=192.168.56.101" \
+        --privileged \
+        --gpus all \
+        -e NVIDIA_DRIVER_CAPABILITIES=all \
+        "${IMAGE_NAME}"
 else
-    GPU_FLAGS="-e LIBGL_ALWAYS_SOFTWARE=1"
     echo "No NVIDIA GPU detected. Using software rendering."
+    echo "Starting ROS2 ${ROS_DISTRO} container..."
+    
+    docker run -it --rm \
+        --name "${CONTAINER_NAME}" \
+        --env="DISPLAY" \
+        --env="QT_X11_NO_MITSHM=1" \
+        --env="XAUTHORITY=${XAUTH}" \
+        --env="ROS_DISTRO=${ROS_DISTRO}" \
+        --env="WORKSPACE=/root/ur_ws" \
+        --volume="${XSOCK}:${XSOCK}:rw" \
+        --volume="${XAUTH}:${XAUTH}:rw" \
+        --volume="${WORKSPACE_DIR}:/root/ur_ws:rw" \
+        --env="ROS_DOMAIN_ID=42" \
+        --env="UROBOT_IP=192.168.56.101" \
+        --env="LIBGL_ALWAYS_SOFTWARE=1" \
+        --privileged \
+        "${IMAGE_NAME}"
 fi
 
-echo "Starting ROS2 ${ROS_DISTRO} container..."
 echo "Press Ctrl+D or type 'exit' to stop the container."
-
-docker run -it --rm \
-    --name "${CONTAINER_NAME}" \
-    --env="DISPLAY" \
-    --env="QT_X11_NO_MITSHM=1" \
-    --env="XAUTHORITY=${XAUTH}" \
-    --env="ROS_DISTRO=${ROS_DISTRO}" \
-    --env="WORKSPACE=/root/ur_ws" \
-    --volume="${XSOCK}:${XSOCK}:rw" \
-    --volume="${XAUTH}:${XAUTH}:rw" \
-    --volume="${WORKSPACE_DIR}:/root/ur_ws:rw" \
-    --env="ROS_DOMAIN_ID=42" \
-    --env="UROBOT_IP=192.168.56.101" \
-    --privileged \
-    ${GPU_FLAGS} \
-    "${IMAGE_NAME}"
 
 # Revoke access after run
 xhost -local:docker > /dev/null

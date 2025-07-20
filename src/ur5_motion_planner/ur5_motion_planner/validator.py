@@ -21,6 +21,7 @@ class Validator(Node):
         self.declare_parameter("pose_threshold", 0.05)
         self.declare_parameter("num_poses", 10)
         self.declare_parameter("sleep_duration", 30)
+
         self.declare_parameter(
             "filename",
             f"./results/validation_results_{self.get_clock().now().nanoseconds}.txt",
