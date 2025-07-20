@@ -12,7 +12,7 @@ WORKSPACE_DIR="$(dirname "$SCRIPT_DIR")"
 echo "--------------------------------------------------"
 echo "Mounting configuration:"
 echo "Host workspace: $WORKSPACE_DIR"
-echo "Mounting host src → container /root/ur_ws/src"
+echo "Mounting host workspace → container /root/ur_ws/"
 echo "--------------------------------------------------"
 
 # X11 configuration
