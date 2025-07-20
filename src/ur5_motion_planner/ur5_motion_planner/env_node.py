@@ -1,4 +1,3 @@
-import re
 import rclpy
 from rclpy.node import Node
 from rclpy.action import ActionClient
@@ -24,10 +23,11 @@ from tf2_ros.buffer import Buffer
 from tf2_ros.transform_listener import TransformListener
 from sensor_msgs.msg import JointState
 
-from stable_baselines3 import SAC
+from stable_baselines3 import SAC, TD3, DDPG, PPO, A2C
 from stable_baselines3.common.env_checker import check_env
 
 from .config_loader import RLConfig
+
 
 class UR5Env(gym.Env, Node):
     """
@@ -100,6 +100,7 @@ class UR5Env(gym.Env, Node):
         # RL State
         self.episode_step_count = 0
         self.max_steps_per_episode = self.config.get('environment.max_steps_per_episode', 200)
+        self.last_target_dist = None
         
         # Get configured parameters
         self.dt = self.config.get('environment.dt', 0.1)
@@ -110,7 +111,8 @@ class UR5Env(gym.Env, Node):
         
         # Reward parameters
         self.reward_max = self.config.get('reward.max_reward', 100.0)
-        self.distance_penalty_scale = self.config.get('reward.distance_penalty_scale', 500.0)
+        self.distance_penalty_scale = self.config.get('reward.distance_penalty_scale', 2.0)
+        self.closer_reward_scale = self.config.get('reward.closer_reward_scale', 20.0)
         self.goal_bonus = self.config.get('reward.goal_bonus', 100.0)
 
     def _wait_services_ready(self):
@@ -222,7 +224,7 @@ class UR5Env(gym.Env, Node):
             terminated = False
             truncated = True
             self.get_logger().error("Penalizing step with -10000 reward and resetting.")
-            return self.observation_space.sample(), -10000, terminated, truncated, {"error": "Failed to send trajectory goal. Penalizing step with -10000 reward and resetting."}
+            return self.observation_space.sample(), reward, terminated, truncated, {"error": "Failed to send trajectory goal. Penalizing step with -10000 reward and resetting."}
 
         # 2. Get New Observation after trajectory completion
         observation = self._get_observation()
@@ -233,18 +235,12 @@ class UR5Env(gym.Env, Node):
             return self.observation_space.sample(), reward, terminated, truncated, {"error": "Failed to get observation"}
 
         # 3. Calculate Reward
-        ee_pos = self.get_end_effector_pose()[:3]
-        distance_to_target = np.linalg.norm(ee_pos - self.target_position)
+        reward, terminated = self.calculate_reward()
         
-        reward = 0 - self.distance_penalty_scale * distance_to_target
-        self.get_logger().info(f"Distance to target: {distance_to_target:.4f}, Reward: {reward:.4f}")
-
         # 4. Check for Termination
-        terminated = False
-        if distance_to_target < self.goal_tolerance: # Goal reached
-            reward = self.goal_bonus
-            terminated = True
-            self.get_logger().info("Goal Reached!")
+        if terminated:
+            self.get_logger().info("Episode terminated: Goal Reached!")
+            self.episode_step_count = 0
 
         # Check for timeout
         truncated = False
@@ -254,9 +250,52 @@ class UR5Env(gym.Env, Node):
 
         return observation, reward, terminated, truncated, {}
 
+    def calculate_reward(self):
+        '''
+        Calculate the reward based on:
+            1 - current distance to the target
+            2 - if the distance from target has increased, apply a penalty, if decreased, reward
+            3 - if goal is reached, apply a big bonus
+        '''
+        reward = 0
+        distance_penalty = self.distance_penalty_scale
+        closer_reward_scale = self.closer_reward_scale
+        improvement = 0
+        terminated = False
+
+        # 1)
+        curr_target_dist = self._calculate_target_dist()
+        reward += (- distance_penalty) * curr_target_dist **2
+
+        # 2)
+        if self.last_target_dist is not None:
+            # This value is positive when getting closer
+            improvement = self.last_target_dist - curr_target_dist
+            # Apply penalty if distance increased, reward if decreased
+            reward += closer_reward_scale * improvement
+
+        self.last_target_dist = curr_target_dist
+
+        # 3)
+        if curr_target_dist < self.goal_tolerance: # Goal reached
+            reward += self.goal_bonus
+            terminated = True
+
+        self.get_logger().info(f"Distance to target: {curr_target_dist:.4f}, diff: {improvement:.4f}, Reward: {reward:.4f}", throttle_duration_sec=3)
+
+        return reward, terminated
+
+    def _calculate_target_dist(self):
+        '''
+        Calculate the Euclidean distance between two points.
+        '''
+        end_effector_pos = self.get_end_effector_pose()[:3]
+        return np.linalg.norm(end_effector_pos - self.target_position)
+
     def reset(self, seed=None, options=None):
         super().reset(seed=seed)
         self.episode_step_count = 0
+        self.last_target_dist = None
 
         # Reset robot to a home position
         home_joint_angles = self.home_position
@@ -357,7 +396,7 @@ class UR5Env(gym.Env, Node):
         
         # Send goal
         send_goal_future = self._action_client.send_goal_async(goal_msg)
-        rclpy.spin_until_future_complete(self, send_goal_future, timeout_sec=5.0)
+        rclpy.spin_until_future_complete(self, send_goal_future, timeout_sec=timeout)
         
         if not send_goal_future.done():
             self.get_logger().error("Failed to send goal - timeout")
@@ -388,6 +427,66 @@ class UR5Env(gym.Env, Node):
         self.destroy_node()
 
 
+def get_algorithm_class(algorithm_name):
+    """
+    Get the appropriate algorithm class based on the algorithm name.
+    
+    Supported algorithms for UR5 robot reaching tasks:
+    
+    CONTINUOUS CONTROL ALGORITHMS (Recommended for robotic manipulation):
+    - SAC (Soft Actor-Critic): Off-policy, sample efficient, handles continuous actions well
+    - TD3 (Twin Delayed DDPG): Off-policy, deterministic, good for robotic control
+    - DDPG (Deep Deterministic Policy Gradient): Off-policy, deterministic, predecessor to TD3
+    - PPO (Proximal Policy Optimization): On-policy, stable, good general performance
+    - A2C (Advantage Actor-Critic): On-policy, simpler than PPO, faster training
+    
+    ALGORITHM RECOMMENDATIONS FOR UR5 REACHING:
+    1. SAC - Best overall choice: sample efficient, stable, handles exploration well
+    2. TD3 - Good for deterministic control, robust to hyperparameters
+    4. PPO - Stable and reliable, good for beginners
+    5. DDPG - Simple but can be unstable
+    6. A2C - Fast training but less stable than PPO
+    
+    Args:
+        algorithm_name: String name of the algorithm
+        
+    Returns:
+        Algorithm class from stable-baselines3
+    """
+    algorithms = {
+        'SAC': SAC,
+        'TD3': TD3,
+        'DDPG': DDPG,
+        'PPO': PPO,
+        'A2C': A2C,
+    }
+    
+    if algorithm_name not in algorithms:
+        available_algs = list(algorithms.keys())
+        raise ValueError(f"Algorithm '{algorithm_name}' not supported. Available algorithms: {available_algs}")
+    
+    return algorithms[algorithm_name]
+
+
+def validate_algorithm_for_environment(algorithm_name, action_space):
+    """
+    Validate that the chosen algorithm is compatible with the environment.
+    
+    Args:
+        algorithm_name: String name of the algorithm
+        action_space: Gymnasium action space
+        
+    Returns:
+        bool: True if compatible, raises ValueError if not
+    """
+    continuous_algorithms = ['SAC', 'TD3', 'DDPG', 'PPO', 'A2C']
+    
+    if algorithm_name in continuous_algorithms and isinstance(action_space, spaces.Discrete):
+        print(f"Warning: {algorithm_name} is designed for continuous control but environment has discrete action space.")
+    
+    return True
+
+
 def main():
     rclpy.init()
     
@@ -408,32 +507,40 @@ def main():
     print("Environment check passed!")
 
     # --- 2. Instantiate and Train the Agent ---
-    # Create model with configured parameters
+    # Get the algorithm from configuration
+    algorithm_name = config.get('model.algorithm', 'SAC')
     model_kwargs = config.get_model_kwargs()
-    tensorboard_log = config.get('training.tensorboard_log', './ur5_sac_tensorboard/')
-    
-    print("Creating SAC model...")
-    model = SAC(
+    tensorboard_log = config.get('training.tensorboard_log', './ur5_tensorboard/')
+    model_path = config.get('training.model_save_path', 'models/ur5_reacher_model.zip')
+    eval_episodes = config.get('training.eval_episodes', 10)
+
+    print(f"Using algorithm: {algorithm_name}")
+    validate_algorithm_for_environment(algorithm_name, env.action_space)
+    AlgorithmClass = get_algorithm_class(algorithm_name)
+        
+    model = AlgorithmClass(
         config.get('model.policy', 'MlpPolicy'),
         env,
         tensorboard_log=tensorboard_log,
         **model_kwargs
     )
-    model_path = config.get('training.model_save_path', 'models/sac_ur5_reacher_model.zip')
+
+    # Make tensorboard log algorithm-specific
+    if 'tensorboard' in tensorboard_log:
+        tensorboard_log = tensorboard_log.replace('tensorboard', f'{algorithm_name.lower()}_tensorboard')
+    elif not algorithm_name.lower() in tensorboard_log.lower():
+        tensorboard_log = tensorboard_log.rstrip('/') + f'_{algorithm_name.lower()}/'
     os.makedirs(os.path.dirname(model_path), exist_ok=True)
 
-    print("Starting Training...")
+    print("----Starting Training----")
     # Train with configured parameters
     training_kwargs = config.get_training_kwargs()
     print(f"Training with parameters: {training_kwargs}")
     model.learn(**training_kwargs)
     print(f"Model will be saved to: {os.path.abspath(model_path)}")
     model.save(model_path)
-    #del model # remove to demonstrate saving and loading
-    
-    #print("\n--- Loading and Evaluating Trained Model ---")
+
     #model = SAC.load(model_path, env=env)
-    eval_episodes = config.get('training.eval_episodes', 10)
 
     print(f"Starting evaluation with {eval_episodes} episodes...")
     for episode in range(eval_episodes):

@@ -1,5 +1,6 @@
 from setuptools import find_packages, setup
 import os
+from glob import glob
 
 package_name = "ur5_motion_planner"
 
@@ -11,6 +12,7 @@ setup(
         ("share/ament_index/resource_index/packages", ["resource/" + package_name]),
         ("share/" + package_name, ["package.xml"]),
         ("share/" + package_name + "/config", ["config/rl_config.yaml"]),
+        (os.path.join('share', package_name, 'launch'), glob('launch/*.launch.py')),
     ],
     install_requires=[
         "setuptools",
@@ -34,7 +36,7 @@ setup(
             "ik_motion_planner = ur5_motion_planner.ik_motion_planner:main",
             "validator = ur5_motion_planner.validator:main",
             "dataset_generator_node = ur5_motion_planner.dataset_generator_node:main",
-            "ur5_reinforce_env = ur5_motion_planner.reinforce_env:main",
+            "env_node = ur5_motion_planner.env_node:main",
         ],
     },
 )

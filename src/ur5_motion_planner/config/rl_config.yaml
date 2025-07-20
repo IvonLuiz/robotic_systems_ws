@@ -4,25 +4,25 @@
 environment:
   max_steps_per_episode: 200
   workspace_bounds:   # where the target will spawn
-    x_min: -0.21
+    x_min: 0.2
     x_max: 0.2
-    y_min: -0.21
+    y_min: 0.2
     y_max: 0.2
     z_min: 0.9
-    z_max: 0.91
+    z_max: 0.9
   goal_tolerance: 0.1  # distance tolerance for reaching the goal (current testing)
   action_scale: 1.0  # scale factor for velocity actions (increased for more visible movement)
   dt: 0.1  # time step for velocity integration (increased for more movement)
 
 # Reward Parameters
 reward:
-  max_reward: 100.0
   distance_penalty_scale: 2.0
-  goal_bonus: 2000.0
+  closer_reward_scale: 10.0  # scale for reward when getting closer to the target
+  goal_bonus: 1000.0
 
 # Model Parameters
 model:
-  algorithm: "SAC"  # options: SAC (Soft Actor-Critic), ...
+  algorithm: "SAC"  # Available algorithms: SAC, TD3, DDPG, PPO, A2C
   policy: "MlpPolicy" # options: MlpPolicy, CnnPolicy, etc.
   learning_rate: 0.0003
   buffer_size: 1000000
@@ -34,14 +34,28 @@ model:
   ent_coef: "auto"
   target_update_interval: 1
   verbose: 1
+  
+  # Algorithm-specific parameters (only used when relevant)
+  # PPO/A2C specific
+  n_steps: 2048
+  n_epochs: 10
+  clip_range: 0.2
+  vf_coef: 0.5
+  ent_coef_ppo: 0.0
+  max_grad_norm: 0.5
+  
+  # TD3 specific
+  policy_delay: 2
+  target_policy_noise: 0.2
+  target_noise_clip: 0.5
 
 # Training Parameters
 training:
-  total_timesteps: 2000
+  total_timesteps: 5000
   log_interval: 4
-  eval_episodes: 2
-  tensorboard_log: "./ur5_sac_tensorboard/"
-  model_save_path: "models/sac_ur5_reacher_model_cu.zip"
+  eval_episodes: 10
+  tensorboard_log: "./ur5_tensorboard/"
+  model_save_path: "models/ur5_reacher_model_updated.zip"
 
 # Joint Limits (radians)
 joint_limits:
@@ -53,6 +67,6 @@ home_position: [0.0, -1.5708, 0.0, -1.5708, 0.0, 0.0]  # joint angles in radians
 
 # ROS Parameters
 ros:
-  action_server_timeout: 20.0
+  action_server_timeout: 5.0
   joint_state_timeout: 10.0
   trajectory_execution_time: 3.0  # increased for more time for robot to move
