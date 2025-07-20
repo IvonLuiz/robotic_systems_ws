@@ -100,31 +100,65 @@ class RLConfig:
     def get_model_kwargs(self):
         """Get model parameters as kwargs for stable-baselines3."""
         model_config = self.config.get('model', {})
+        algorithm = model_config.get('algorithm', 'SAC')
         
         # Convert config to stable-baselines3 format
         kwargs = {}
         
-        # Basic parameters
+        # Basic parameters (common to most algorithms)
         if 'learning_rate' in model_config:
             kwargs['learning_rate'] = model_config['learning_rate']
-        if 'buffer_size' in model_config:
-            kwargs['buffer_size'] = model_config['buffer_size']
-        if 'learning_starts' in model_config:
-            kwargs['learning_starts'] = model_config['learning_starts']
-        if 'batch_size' in model_config:
-            kwargs['batch_size'] = model_config['batch_size']
-        if 'tau' in model_config:
-            kwargs['tau'] = model_config['tau']
-        if 'gamma' in model_config:
-            kwargs['gamma'] = model_config['gamma']
-        if 'gradient_steps' in model_config:
-            kwargs['gradient_steps'] = model_config['gradient_steps']
-        if 'ent_coef' in model_config:
-            kwargs['ent_coef'] = model_config['ent_coef']
-        if 'target_update_interval' in model_config:
-            kwargs['target_update_interval'] = model_config['target_update_interval']
         if 'verbose' in model_config:
             kwargs['verbose'] = model_config['verbose']
+        if 'gamma' in model_config:
+            kwargs['gamma'] = model_config['gamma']
+        
+        # Off-policy algorithms (SAC, TD3, DDPG)
+        if algorithm in ['SAC', 'TD3', 'DDPG']:
+            if 'buffer_size' in model_config:
+                kwargs['buffer_size'] = model_config['buffer_size']
+            if 'learning_starts' in model_config:
+                kwargs['learning_starts'] = model_config['learning_starts']
+            if 'batch_size' in model_config:
+                kwargs['batch_size'] = model_config['batch_size']
+            if 'tau' in model_config:
+                kwargs['tau'] = model_config['tau']
+            if 'gradient_steps' in model_config:
+                kwargs['gradient_steps'] = model_config['gradient_steps']
+        
+        # SAC specific parameters
+        if algorithm == 'SAC':
+            if 'ent_coef' in model_config:
+                kwargs['ent_coef'] = model_config['ent_coef']
+            if 'target_update_interval' in model_config:
+                kwargs['target_update_interval'] = model_config['target_update_interval']
+        
+        # TD3 specific parameters
+        elif algorithm == 'TD3':
+            if 'policy_delay' in model_config:
+                kwargs['policy_delay'] = model_config['policy_delay']
+            if 'target_policy_noise' in model_config:
+                kwargs['target_policy_noise'] = model_config['target_policy_noise']
+            if 'target_noise_clip' in model_config:
+                kwargs['target_noise_clip'] = model_config['target_noise_clip']
+        
+        # PPO/A2C specific parameters (on-policy)
+        elif algorithm in ['PPO', 'A2C']:
+            if 'n_steps' in model_config:
+                kwargs['n_steps'] = model_config['n_steps']
+            if 'ent_coef_ppo' in model_config:
+                kwargs['ent_coef'] = model_config['ent_coef_ppo']
+            if 'vf_coef' in model_config:
+                kwargs['vf_coef'] = model_config['vf_coef']
+            if 'max_grad_norm' in model_config:
+                kwargs['max_grad_norm'] = model_config['max_grad_norm']
+            
+            # PPO specific
+            if algorithm == 'PPO':
+                if 'n_epochs' in model_config:
+                    kwargs['n_epochs'] = model_config['n_epochs']
+                if 'clip_range' in model_config:
+                    kwargs['clip_range'] = model_config['clip_range']
             
         return kwargs
     
