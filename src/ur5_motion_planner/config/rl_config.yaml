@@ -3,20 +3,40 @@
 # Environment Parameters
 environment:
   max_steps_per_episode: 200
-  workspace_bounds:   # where the target will spawn
+  
+  # Target sampling method: 'cartesian' or 'spherical'
+  target_sampling_method: 'spherical'  # cartesian = direct x,y,z sampling; spherical = even distribution around robot
+  
+  # Cartesian workspace bounds (used when target_sampling_method = 'cartesian')
+  workspace_bounds:
     x_min: -0.2
     x_max: 0.2
     y_min: -0.2
     y_max: 0.2
     z_min: 0.7
     z_max: 0.9
-  goal_tolerance: 0.05  # distance tolerance for reaching the goal (current testing)
-  action_scale: 1.0  # scale factor for velocity actions (increased for more visible movement)
-  dt: 0.1  # time step for velocity integration (increased for more movement)
+
+    max_reach_validation: 0.85  # Maximum reach distance for validation (UR5 reach ~0.85m)
+    
+    # Spherical workspace bounds (used when target_sampling_method = 'spherical')
+    # Uncomment and adjust these if using spherical sampling:
+    radius_min: 0.3      # Minimum distance from robot base
+    radius_max: 0.85      # Maximum distance from robot base
+    theta_min: -3.14159  # Minimum azimuthal angle (around z-axis)
+    theta_max: 3.14159   # Maximum azimuthal angle
+    phi_min: 0.0         # Minimum polar angle (0 = straight up)
+    phi_max: 1.5708      # Maximum polar angle (pi/2 = horizontal)
+    z_offset: 0.1        # Height offset from robot base
+  
+  goal_tolerance: 0.05  # distance tolerance for reaching the goal
+  action_scale: 1.0     # scale factor for velocity actions
+  dt: 0.1               # time step for velocity integration
 
 # Reward Parameters
 reward:
-  distance_penalty_scale: 2.0
+  reward_threshold: 0.35  # the distance where the reward switches from negative to positive, separating penalty to positive reward
+  distance_penalty_scale: 5.0
+  distance_reward_steepness: 3  # steepness of the distance penalty curve
   closer_reward_scale: 10.0  # scale for reward when getting closer to the target
   goal_bonus: 1000.0
 
@@ -24,6 +44,7 @@ reward:
 model:
   algorithm: "SAC"  # Available algorithms: SAC, TD3, DDPG, PPO, A2C
   policy: "MlpPolicy" # options: MlpPolicy, CnnPolicy, etc.
+  network_type: "medium"  # Network architecture: small, medium, large, deep, wide
   learning_rate: 0.0003
   buffer_size: 1000000
   learning_starts: 100
@@ -51,16 +72,23 @@ model:
 
 # Training Parameters
 training:
-  total_timesteps: 50000
+  total_timesteps: 200000
   log_interval: 4
   eval_episodes: 5
   tensorboard_log: "./ur5_tensorboard/"
-  model_save_path: "models/ur5_reacher_model_100000.zip"
+  model_save_path: "models/ur5_reacher_model_200000.zip"
+  load_pretrained_model: false # Set to true if you want to load a pre-trained model
+  pretrained_model_path: "models/ur5_reacher_model_50000.zip"
+  
+  # Advanced Training Parameters for new trainer
+  auto_save_frequency: 10000  # Save model every N timesteps
+  checkpoint_frequency: 10000  # Create checkpoint every N timesteps
+  plot_frequency: 50  # Create training plots every N episodes
 
-# Joint Limits (radians)
+# Joint Limits (radians) - UR5 specific safe limits
 joint_limits:
-  lower: [-3.14159, -3.14159, -3.14159, -3.14159, -3.14159, -3.14159]
-  upper: [3.14159, 3.14159, 3.14159, 3.14159, 3.14159, 3.14159]
+  lower: [-3.14159, -3.14159, -2.79253, -3.14159, -3.14159, -3.14159]
+  upper: [3.14159, 3.14159, 2.79253, 3.14159, 3.14159, 3.14159]
 
 # Home Position
 home_position: [0.0, -1.5708, 0.0, -1.5708, 0.0, 0.0]  # joint angles in radians

@@ -110,8 +110,9 @@ class UR5Env(gym.Env, Node):
         self.home_position = self.config.get('home_position', [0, -np.pi/2, 0.01, -np.pi/2, 0.01, 0.01])
         
         # Reward parameters
-        self.reward_max = self.config.get('reward.max_reward', 100.0)
+        self.reward_threshold = self.config.get('reward.reward_threshold', 0.35)
         self.distance_penalty_scale = self.config.get('reward.distance_penalty_scale', 2.0)
+        self.distance_reward_steepness = self.config.get('reward.distance_reward_steepness', 0.5)
         self.closer_reward_scale = self.config.get('reward.closer_reward_scale', 20.0)
         self.goal_bonus = self.config.get('reward.goal_bonus', 100.0)
 
@@ -210,7 +211,10 @@ class UR5Env(gym.Env, Node):
         new_target_angles = current_angles + action * dt
 
         # Clip to joint limits
-        new_target_angles = np.clip(new_target_angles, self.joint_limits_lower, self.joint_limits_upper)
+        #print if new targets surpassed limits
+        #if np.any(new_target_angles < self.joint_limits_lower) or np.any(new_target_angles > self.joint_limits_upper):
+        #    self.get_logger().warn(f"New target angles {new_target_angles} exceeded joint limits {self.joint_limits_lower} - {self.joint_limits_upper}")
+        #new_target_angles = np.clip(new_target_angles, self.joint_limits_lower, self.joint_limits_upper)
 
         self.get_logger().debug(f"Step {self.episode_step_count}")
         self.get_logger().debug(f"Action: {action}")
@@ -252,48 +256,54 @@ class UR5Env(gym.Env, Node):
 
     def calculate_reward(self):
         '''
-        Calculate the reward based on:
-            1 - current distance to the target
-            2 - if the distance from target has increased, apply a penalty, if decreased, reward
-            3 - amount of steps taken to reach the goal
-            4 - if goal is reached, apply a big bonus
+        Calculates a reward using a smooth exponential function.
+        
+        The total reward is shaped by:
+        1. Exponential Distance Reward: A continuous function that provides a
+        strong negative penalty for being far from the target and a strong
+        positive reward for being closer than a defined threshold.
+        2. Improvement Reward: Rewards the agent for reducing the distance to
+        the target compared to the previous step.
+        3. Step Penalty: A small penalty for each step taken to encourage
+        efficiency.
+        4. Goal Bonus: A large reward for reaching the target.
         '''
         reward = 0
-        distance_penalty = self.distance_penalty_scale
-        closer_reward_scale = self.closer_reward_scale
         improvement = 0
         terminated = False
+        curr_target_dist = self._calculate_target_dist()
 
         # 1)
-        curr_target_dist = self._calculate_target_dist()
-        if curr_target_dist <= 0.3:
-            reward += 0.3 * (1 / curr_target_dist)
-        if curr_target_dist <= 0.2:
-            reward += 0.8 * (1 / curr_target_dist)
-        if curr_target_dist <= 0.1:
-            reward += 1.1 * (1 / curr_target_dist)
-        reward += (- distance_penalty) * curr_target_dist **2
+        # reward = scale * (e^(steepness * (threshold - distance)) - 1)
+        # `self.reward_threshold`: negative when farther, and positive when closer.
+        distance_reward = self.distance_penalty_scale * \
+            (np.exp(self.distance_reward_steepness * (self.reward_threshold - curr_target_dist)) - 1)
+        reward += distance_reward
 
         # 2)
         if self.last_target_dist is not None:
-            # This value is positive when getting closer
+            # this value is positive when getting closer, negative otherwise
             improvement = self.last_target_dist - curr_target_dist
-            # Apply penalty if distance increased, reward if decreased
-            reward += 4*closer_reward_scale * improvement
-
+            reward += 5 * self.closer_reward_scale * improvement
         self.last_target_dist = curr_target_dist
 
         # 3)
         if self.episode_step_count > 0:
-            # Penalize for taking too many steps
+            # penalize for taking too many steps to encourage efficiency
             reward -= 0.01 * self.episode_step_count
 
         # 4)
-        if curr_target_dist < self.goal_tolerance: # Goal reached
+        if curr_target_dist < self.goal_tolerance:
             reward += self.goal_bonus
             terminated = True
 
-        self.get_logger().info(f"Distance to target: {curr_target_dist:.4f}, diff: {improvement:.4f}, Reward: {reward:.4f}", throttle_duration_sec=1)
+        self.get_logger().info(
+            f"Dist: {curr_target_dist:.3f}, "
+            f"ExpReward: {distance_reward:.3f}, "
+            f"Improv: {improvement:.3f}, "
+            f"TotalReward: {reward:.3f}",
+            throttle_duration_sec=1
+        )
 
         return reward, terminated
 
@@ -347,12 +357,54 @@ class UR5Env(gym.Env, Node):
         return np.concatenate([joint_angles, vector_to_target]).astype(np.float32)
 
     def _generate_random_target(self):
-        # Generate a reachable (x, y, z) position within the workspace
+        """
+        Generate a reachable (x, y, z) position within the workspace.
+        
+        Supports two sampling methods:
+        1. Cartesian: Direct sampling within x,y,z bounds (default)
+        2. Spherical: Sampling in spherical coordinates (useful for even distribution around robot)
+        """
         bounds = self.config.get('environment.workspace_bounds', {})
-        x = np.random.uniform(bounds.get('x_min', -0.21), bounds.get('x_max', 0.2))
-        y = np.random.uniform(bounds.get('y_min', -0.21), bounds.get('y_max', 0.2))
-        z = np.random.uniform(bounds.get('z_min', 0.9), bounds.get('z_max', 0.91))
-        return np.array([x, y, z])
+        sampling_method = self.config.get('environment.target_sampling_method', 'cartesian')
+        
+        if sampling_method == 'spherical':
+            # Spherical coordinate sampling - useful for even distribution around robot base
+            radius_min = bounds.get('radius_min', 0.3)  # minimum reach distance
+            radius_max = bounds.get('radius_max', 0.8)   # maximum reach distance
+            theta_min = bounds.get('theta_min', -np.pi)   # azimuthal angle range
+            theta_max = bounds.get('theta_max', np.pi)
+            phi_min = bounds.get('phi_min', 0)            # polar angle range (0 = up)
+            phi_max = bounds.get('phi_max', np.pi/2)      # pi/2 = horizontal plane
+            
+            radius = np.random.uniform(radius_min, radius_max)
+            theta = np.random.uniform(theta_min, theta_max)  # azimuthal angle
+            phi = np.random.uniform(phi_min, phi_max)        # polar angle
+            
+            x = radius * np.sin(phi) * np.cos(theta)
+            y = radius * np.sin(phi) * np.sin(theta)
+            z = radius * np.cos(phi)
+            
+            # Add base height offset if specified
+            z_offset = bounds.get('z_offset', 0.0)
+            z += z_offset
+            
+        else:
+            # Default: Cartesian coordinate sampling within defined workspace bounds
+            x = np.random.uniform(bounds.get('x_min', -0.21), bounds.get('x_max', 0.2))
+            y = np.random.uniform(bounds.get('y_min', -0.21), bounds.get('y_max', 0.2))
+            z = np.random.uniform(bounds.get('z_min', 0.9), bounds.get('z_max', 0.91))
+        
+        target = np.array([x, y, z])
+        
+        # Optional: Validate that target is within UR5 reachable workspace
+        # UR5 has approximately 0.85m reach from base
+        distance_from_base = np.linalg.norm(target[:2])  # distance in x-y plane
+        max_reach = bounds.get('max_reach_validation', 0.85)
+        
+        if distance_from_base > max_reach:
+            self.get_logger().debug(f"Generated target at distance {distance_from_base:.3f}m may be unreachable (max: {max_reach}m)")
+        
+        return target
 
     def get_joint_angles(self):
         if self.current_joint_state is None:
@@ -501,10 +553,7 @@ def validate_algorithm_for_environment(algorithm_name, action_space):
 
 def main():
     rclpy.init()
-    
-    # Load configuration
     config = RLConfig()
-    
     env = UR5Env()
     
     executor = MultiThreadedExecutor()
@@ -514,69 +563,98 @@ def main():
 
     # --- 1. Check the environment ---
     # It will display warnings if something is wrong
-    print("Checking environment...")
-    check_env(env)
-    print("Environment check passed!")
+    #print("Checking environment...")
+    #check_env(env)
+    #print("Environment check passed!")
 
-    # --- 2. Instantiate and Train the Agent ---
-    # Get the algorithm from configuration
+    # --- 2. Import and setup the trainer ---
+    from .trainer import UR5Trainer, NETWORK_CONFIGS
+    
+    # Choose network configuration
+    network_type = config.get('model.network_type', 'medium')  # small, medium, large, deep, wide
     algorithm_name = config.get('model.algorithm', 'SAC')
-    model_kwargs = config.get_model_kwargs()
-    tensorboard_log = config.get('training.tensorboard_log', './ur5_tensorboard/')
-    model_path = config.get('training.model_save_path', 'models/ur5_reacher_model.zip')
-    eval_episodes = config.get('training.eval_episodes', 10)
+    custom_network_config = NETWORK_CONFIGS.get(network_type, NETWORK_CONFIGS['medium'])
+    
+    # Create trainer with custom network
+    trainer = UR5Trainer(env, config, custom_network_config)
+    
+    # Check if we should load a pre-trained model
+    load_pre_trained = config.get('training.load_pretrained_model', False)
+    if load_pre_trained:
+        pre_trained_model_path = config.get('training.pretrained_model_path', None)
+        if pre_trained_model_path and os.path.exists(pre_trained_model_path):
+            print(f"Loading pre-trained model from: {pre_trained_model_path}")
+            trainer.load_model(pre_trained_model_path)
+        else:
+            print("Pre-trained model path not found, creating new model")
+            trainer.create_model(algorithm_name)
+    else:
+        print("Creating new model")
+        trainer.create_model(algorithm_name)
 
-    print(f"Using algorithm: {algorithm_name}")
-    validate_algorithm_for_environment(algorithm_name, env.action_space)
-    AlgorithmClass = get_algorithm_class(algorithm_name)
+    # --- 3. Start Training ---
+    print("="*60)
+    print("STARTING UR5 RL TRAINING")
+    print("="*60)
+    
+    algorithm_name = config.get('model.algorithm', 'SAC')
+    total_timesteps = config.get('training.total_timesteps', 100000)
+    save_frequency = config.get('training.auto_save_frequency', 10000)
+    
+    print(f"Algorithm: {algorithm_name}")
+    print(f"Network Type: {network_type}")
+    print(f"Network Config: {custom_network_config}")
+    print(f"Total Timesteps: {total_timesteps:,}")
+    print(f"Auto-save Frequency: {save_frequency:,}")
+    print("-" * 60)
+    
+    try:
+        # Train the model with automatic saving and monitoring
+        trainer.train(total_timesteps=total_timesteps, save_frequency=save_frequency)
         
-    model = AlgorithmClass(
-        config.get('model.policy', 'MlpPolicy'),
-        env,
-        tensorboard_log=tensorboard_log,
-        **model_kwargs
-    )
-
-    # Make tensorboard log algorithm-specific
-    if 'tensorboard' in tensorboard_log:
-        tensorboard_log = tensorboard_log.replace('tensorboard', f'{algorithm_name.lower()}_tensorboard')
-    elif not algorithm_name.lower() in tensorboard_log.lower():
-        tensorboard_log = tensorboard_log.rstrip('/') + f'_{algorithm_name.lower()}/'
-    os.makedirs(os.path.dirname(model_path), exist_ok=True)
-
-    print("----Starting Training----")
-    start_time = time.time()
-    # Train with configured parameters
-    training_kwargs = config.get_training_kwargs()
-    print(f"Training with parameters: {training_kwargs}")
-    model.learn(**training_kwargs)
-    print(f"Model will be saved to: {os.path.abspath(model_path)}")
-    model.save(model_path)
-    end_time = time.time()
-    print(f"Training completed in {end_time - start_time:.2f} seconds.")
-
-    #model = SAC.load(model_path, env=env)
-
-    print(f"Starting evaluation with {eval_episodes} episodes...")
-    for episode in range(eval_episodes):
-        obs, info = env.reset()
-        done = False
-        total_reward = 0
-        while not done:
-            # Use the model to predict the best action
-            action, _states = model.predict(obs, deterministic=True)
-            obs, reward, terminated, truncated, info = env.step(action)
-            total_reward += reward
-            done = terminated or truncated
-        print(f"Evaluation Episode {episode + 1} finished with total reward: {total_reward:.2f}")
-
-
-    print("Closing environment and shutting down ROS.")
-    # Give a moment for logs to flush
-    time.sleep(0.1)
-    env.close()
-    rclpy.shutdown()
-    thread.join()
+        # Create final plots
+        trainer.create_final_plots()
+        
+        # --- 4. Evaluation ---
+        eval_episodes = config.get('training.eval_episodes', 10)
+        print(f"\nStarting evaluation with {eval_episodes} episodes...")
+        
+        eval_results = trainer.evaluate(n_episodes=eval_episodes)
+        
+        # --- 5. Training Summary ---
+        summary = trainer.get_training_summary()
+        print("\n" + "="*60)
+        print("TRAINING SUMMARY")
+        print("="*60)
+        print(f"Algorithm: {summary['algorithm']}")
+        print(f"Total Timesteps: {summary['total_timesteps']:,}")
+        print(f"Training Time: {summary['training_time']:.2f} seconds")
+        print(f"Custom Network: {summary['custom_network']}")
+        print(f"Models saved to: {summary['models_dir']}")
+        print(f"Plots saved to: {summary['plots_dir']}")
+        print(f"Tensorboard logs: {summary['tensorboard_log']}")
+        print(f"Final evaluation reward: {eval_results['mean_reward']:.2f} ± {eval_results['std_reward']:.2f}")
+        print("="*60)
+        
+    except KeyboardInterrupt:
+        print("\nTraining interrupted by user")
+        trainer.save_model()
+        print("Model saved before exit")
+        
+    except Exception as e:
+        print(f"\nTraining error: {e}")
+        trainer.save_model()
+        print("Model saved despite error")
+        raise
+        
+    finally:
+        print("\nCleaning up...")
+        # Give a moment for logs to flush
+        time.sleep(0.1)
+        env.close()
+        rclpy.shutdown()
+        thread.join()
+        print("Cleanup complete.")
 
 
 if __name__ == '__main__':
