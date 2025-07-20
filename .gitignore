@@ -8,3 +8,5 @@ compile_commands.json
 
 env/
 __pycache__/
+
+results/

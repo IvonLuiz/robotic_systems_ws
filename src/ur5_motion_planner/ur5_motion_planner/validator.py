@@ -18,7 +18,7 @@ class Validator(Node):
 
         self.declare_parameter("random_seed", 42)
         self.declare_parameter("pose_list_topic", "/pose_list")
-        self.declare_parameter("pose_threshold", 0.2)
+        self.declare_parameter("pose_threshold", 0.05)
         self.declare_parameter("num_poses", 10)
         self.declare_parameter("sleep_duration", 30)
         self.declare_parameter(
@@ -47,6 +47,7 @@ class Validator(Node):
         sleep_duration = self.get_parameter("sleep_duration").value
 
         self.get_logger().info("Motion Planner Validator Node has been started.")
+        passed = 0
         for i in range(self.get_parameter("num_poses").value):
             pose = self.generate_random_pose()
             self.test_topic.publish(pose)
@@ -59,11 +60,15 @@ class Validator(Node):
                 desired_pose=pose, timeout_sec=sleep_duration
             ):
                 self.get_logger().info(f"Pose {i} reached successfully.")
+                passed += 1
             else:
                 self.get_logger().warn(f"Pose {i} not reached within timeout.")
 
         # End node
         self.get_logger().info("Validation completed.")
+        self.get_logger().info(
+            f"Total poses passed: {passed}/{self.get_parameter('num_poses').value}"
+        )
         self.get_logger().info("Motion Planner Validator Node has been stopped.")
         self.destroy_node()
         rclpy.shutdown()
@@ -121,20 +126,13 @@ class Validator(Node):
             + (current_pose.position.z - suggested_pose.position.z) ** 2
         ) ** 0.5
 
-        orientation_diff = (
-            (current_pose.orientation.x - suggested_pose.orientation.x) ** 2
-            + (current_pose.orientation.y - suggested_pose.orientation.y) ** 2
-            + (current_pose.orientation.z - suggested_pose.orientation.z) ** 2
-            + (current_pose.orientation.w - suggested_pose.orientation.w) ** 2
-        ) ** 0.5
-
         self.get_logger().info(
-            f"Validating pose: Position diff {position_diff}, Orientation diff {orientation_diff}"
+            f"Validating pose: Position diff {position_diff}"
         )
 
         if position_diff < threshold:
             self.get_logger().info(
-                f"Pose is valid: Position diff {position_diff}, Orientation diff {orientation_diff}"
+                f"Pose is valid: Position diff {position_diff}"
             )
             return True
 
