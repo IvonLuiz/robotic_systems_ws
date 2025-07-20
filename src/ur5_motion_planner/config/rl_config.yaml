@@ -10,20 +10,20 @@ environment:
     y_max: 0.2
     z_min: 0.9
     z_max: 0.91
-  goal_tolerance: 0.1  # distance tolerance for reaching the goal
+  goal_tolerance: 0.1  # distance tolerance for reaching the goal (current testing)
   action_scale: 1.0  # scale factor for velocity actions (increased for more visible movement)
   dt: 0.1  # time step for velocity integration (increased for more movement)
 
 # Reward Parameters
 reward:
   max_reward: 100.0
-  distance_penalty_scale: 50.0
-  goal_bonus: 1000.0
+  distance_penalty_scale: 2.0
+  goal_bonus: 2000.0
 
 # Model Parameters
 model:
-  algorithm: "SAC"  # Soft Actor-Critic
-  policy: "MlpPolicy"
+  algorithm: "SAC"  # options: SAC (Soft Actor-Critic), ...
+  policy: "MlpPolicy" # options: MlpPolicy, CnnPolicy, etc.
   learning_rate: 0.0003
   buffer_size: 1000000
   learning_starts: 100
@@ -37,11 +37,10 @@ model:
 
 # Training Parameters
 training:
-  total_timesteps: 50000
+  total_timesteps: 2000
   log_interval: 4
-  eval_episodes: 10
-  save_interval: 5000  # Save model every N timesteps
-  tensorboard_log: "./ur5_sac_tensorboarsd/"
+  eval_episodes: 2
+  tensorboard_log: "./ur5_sac_tensorboard/"
   model_save_path: "models/sac_ur5_reacher_model_cu.zip"
 
 # Joint Limits (radians)
@@ -50,7 +49,7 @@ joint_limits:
   upper: [3.14159, 3.14159, 3.14159, 3.14159, 3.14159, 3.14159]
 
 # Home Position
-home_position: [0.0, -1.5708, 0.01, -1.5708, 0.01, 0.01]  # Joint angles in radians
+home_position: [0.0, -1.5708, 0.0, -1.5708, 0.0, 0.0]  # joint angles in radians
 
 # ROS Parameters
 ros:

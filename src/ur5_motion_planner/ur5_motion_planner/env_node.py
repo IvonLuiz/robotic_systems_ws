@@ -221,6 +221,7 @@ class UR5Env(gym.Env, Node):
             reward = -10000
             terminated = False
             truncated = True
+            self.get_logger().error("Penalizing step with -10000 reward and resetting.")
             return self.observation_space.sample(), -10000, terminated, truncated, {"error": "Failed to send trajectory goal. Penalizing step with -10000 reward and resetting."}
 
         # 2. Get New Observation after trajectory completion
