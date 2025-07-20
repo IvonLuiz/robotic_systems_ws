@@ -30,6 +30,7 @@ RUN apt-get update && apt-get install -y \
     ros-jazzy-moveit \
     ros-jazzy-ur-* \
     ros-jazzy-xacro \
+    ros-jazzy-tf-transformations \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR ${WORKSPACE}

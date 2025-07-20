@@ -105,10 +105,9 @@ ros2 run ur5_motion_planner ik_motion_planner
 
 to send a pose modify the example:
 ```bash
-ros2 topic pub /pose_list ur5_interfaces/msg/PoseList "{
-  poses: [
-    position: {x: 0.4, y: 0.2, z: 0.3}, orientation: {x: 0.0, y: 0.0, z: 0.0, w: 1.0}
-  ]
+ros2 topic pub --once /pose_list geometry_msgs/msg/Pose "{
+  position: {x: 0.675, y: 0.122, z: 0.3475},
+  orientation: {x: 0.0, y: 0.0, z: 0.0, w: 1.0}
 }"
 ```
 
