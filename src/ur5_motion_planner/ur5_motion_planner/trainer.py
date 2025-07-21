@@ -112,12 +112,15 @@ class TrainingCallback(BaseCallback):
     """
     
     def __init__(self, save_path: str, plot_freq: int = 50, verbose: int = 0, 
-                 algorithm_name: str = 'RL', smooth_window: int = 10):
+                 algorithm_name: str = 'RL', smooth_window: int = 10, 
+                 total_timesteps: int = 100000, training_start_time: float = None):
         super().__init__(verbose)
         self.save_path = save_path
         self.plot_freq = plot_freq
         self.algorithm_name = algorithm_name
         self.smooth_window = smooth_window
+        self.total_timesteps = total_timesteps
+        self.training_start_time = training_start_time or time.time()
         
         # Training metrics
         self.episode_rewards = []
@@ -130,6 +133,10 @@ class TrainingCallback(BaseCallback):
         self.current_episode_reward = 0
         self.current_episode_length = 0
         self.episode_count = 0
+        
+        # Progress tracking
+        self.last_progress_print = 0
+        self.progress_print_freq = 10  # Print progress every 10 episodes
         
         # DataFrame for professional plotting
         self.training_data = pd.DataFrame()
@@ -148,6 +155,9 @@ class TrainingCallback(BaseCallback):
             self.episode_lengths.append(self.current_episode_length)
             self.timesteps.append(self.num_timesteps)
             self.episode_numbers.append(self.episode_count)
+            
+            # Print episode progress and time information
+            self._print_episode_progress()
             
             # Update DataFrame
             new_row = pd.DataFrame({
@@ -170,6 +180,53 @@ class TrainingCallback(BaseCallback):
                 self._create_professional_plots()
         
         return True
+    
+    def _print_episode_progress(self):
+        """Print detailed episode progress information."""
+        # Calculate progress
+        progress_percent = (self.num_timesteps / self.total_timesteps) * 100
+        remaining_timesteps = self.total_timesteps - self.num_timesteps
+        
+        # Calculate time information
+        elapsed_time = time.time() - self.training_start_time
+        elapsed_minutes = elapsed_time / 60
+        elapsed_hours = elapsed_minutes / 60
+        
+        # Estimate remaining time based on current progress
+        if self.num_timesteps > 0:
+            estimated_total_time = elapsed_time * (self.total_timesteps / self.num_timesteps)
+            remaining_time = estimated_total_time - elapsed_time
+            remaining_minutes = remaining_time / 60
+            remaining_hours = remaining_minutes / 60
+        else:
+            remaining_minutes = 0
+            remaining_hours = 0
+        
+        # Calculate recent performance
+        recent_rewards = self.episode_rewards[-min(10, len(self.episode_rewards)):]
+        recent_avg_reward = np.mean(recent_rewards) if recent_rewards else 0
+        
+        # Format time strings
+        if elapsed_hours >= 1:
+            elapsed_str = f"{elapsed_hours:.1f}h"
+        else:
+            elapsed_str = f"{elapsed_minutes:.1f}m"
+            
+        if remaining_hours >= 1:
+            remaining_str = f"{remaining_hours:.1f}h"
+        else:
+            remaining_str = f"{remaining_minutes:.1f}m"
+        
+        # Print comprehensive progress information
+        print(f"\n📊 Episode {self.episode_count:,} Complete | "
+              f"Timestep {self.num_timesteps:,}/{self.total_timesteps:,} ({progress_percent:.1f}%)")
+        print(f"🎯 Reward: {self.current_episode_reward:.2f} | "
+              f"Length: {self.current_episode_length} steps | "
+              f"Recent Avg: {recent_avg_reward:.2f}")
+        print(f"⏱️ Training Time: {elapsed_str} elapsed | "
+              f"~{remaining_str} remaining")
+        print(f"🚀 Progress: {remaining_timesteps:,} timesteps left")
+        print("-" * 80)
     
     def _smooth_data(self, data, window_size):
         """Apply moving average smoothing to data."""
@@ -528,14 +585,19 @@ class UR5Trainer:
         
         return "MlpPolicy"  # Fallback to default
     
-    def setup_callbacks(self, algorithm_name: str = 'RL'):
+    def setup_callbacks(self, algorithm_name: str = 'RL', total_timesteps: int = None, training_start_time: float = None):
         """Setup training callbacks for monitoring and checkpointing."""
+        if total_timesteps is None:
+            total_timesteps = self.config.get('training.total_timesteps', 100000)
+        
         # Training progress callback with professional plotting
         progress_callback = TrainingCallback(
             save_path=str(self.plots_dir),
             plot_freq=self.config.get('training.plot_frequency', 50),
             algorithm_name=algorithm_name,
-            smooth_window=self.config.get('training.smooth_window', 10)
+            smooth_window=self.config.get('training.smooth_window', 10),
+            total_timesteps=total_timesteps,
+            training_start_time=training_start_time or time.time()
         )
         
         # Checkpoint callback - save model every N timesteps
@@ -661,14 +723,29 @@ class UR5Trainer:
             total_timesteps = self.config.get('training.total_timesteps', 100000)
         
         algorithm_name = self.config.get('model.algorithm', 'SAC')
-        self.setup_callbacks(algorithm_name)
         self.is_training = True
         self.training_start_time = time.time()
         
-        print(f"Starting training for {total_timesteps:,} timesteps...")
-        print(f"Models will be saved to: {self.models_dir}")
-        print(f"Plots will be saved to: {self.plots_dir}")
-        print(f"Tensorboard logs: {self.tensorboard_log}")
+        # Setup callbacks with training parameters
+        self.setup_callbacks(algorithm_name, total_timesteps, self.training_start_time)
+        
+        print(f"🚀 Starting {algorithm_name} training for {total_timesteps:,} timesteps...")
+        print(f"📁 Models will be saved to: {self.models_dir}")
+        print(f"📊 Plots will be saved to: {self.plots_dir}")
+        print(f"📈 Tensorboard logs: {self.tensorboard_log}")
+        
+        # Estimate training time based on typical RL performance
+        estimated_episodes = total_timesteps // 50  # Rough estimate: 50 timesteps per episode average
+        print(f"📅 Estimated episodes: ~{estimated_episodes:,}")
+        
+        # Check initial GPU usage
+        print("\n" + "="*50)
+        print("DEVICE AND MEMORY INFORMATION")
+        print("="*50)
+        gpu_info = self.check_gpu_usage()
+        print("="*50)
+        print("🎯 Training will begin shortly...")
+        print("=" * 80)
         
         try:
             # Create auto-save callback
@@ -712,8 +789,30 @@ class UR5Trainer:
             final_model_path = self.models_dir / f"final_model_{total_timesteps}.zip"
             self.save_model(final_model_path)
             
+            # Training completion summary
             training_time = time.time() - self.training_start_time
-            print(f"✅ Training completed in {training_time:.2f} seconds")
+            training_hours = training_time / 3600
+            training_minutes = training_time / 60
+            
+            # Get final episode count from callback
+            episode_count = 0
+            for callback in self.callbacks:
+                if isinstance(callback, TrainingCallback):
+                    episode_count = callback.episode_count
+                    break
+            
+            print("\n" + "=" * 80)
+            print("🎉 TRAINING COMPLETED SUCCESSFULLY!")
+            print("=" * 80)
+            if training_hours >= 1:
+                print(f"⏱️ Total Training Time: {training_hours:.1f} hours ({training_time:.0f} seconds)")
+            else:
+                print(f"⏱️ Total Training Time: {training_minutes:.1f} minutes ({training_time:.0f} seconds)")
+            print(f"📊 Episodes Completed: {episode_count:,}")
+            print(f"🎯 Timesteps Completed: {total_timesteps:,}")
+            if episode_count > 0:
+                print(f"📈 Average Episode Length: {total_timesteps/episode_count:.1f} timesteps")
+            print("=" * 80)
             
         except KeyboardInterrupt:
             print("⚠️ Training interrupted by user")
