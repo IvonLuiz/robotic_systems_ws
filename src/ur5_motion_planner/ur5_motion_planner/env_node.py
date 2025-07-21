@@ -290,7 +290,7 @@ class UR5Env(gym.Env, Node):
         if self.last_target_dist is not None:
             # this value is positive when getting closer, negative otherwise
             improvement = self.last_target_dist - curr_target_dist
-            reward += 5 * self.closer_reward_scale * improvement
+            reward += self.closer_reward_scale * improvement
         self.last_target_dist = curr_target_dist
 
         # 3)
