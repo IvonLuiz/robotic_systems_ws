@@ -105,10 +105,9 @@ ros2 run ur5_motion_planner ik_motion_planner
 
 to send a pose modify the example:
 ```bash
-ros2 topic pub /pose_list ur5_interfaces/msg/PoseList "{
-  poses: [
-    position: {x: 0.4, y: 0.2, z: 0.3}, orientation: {x: 0.0, y: 0.0, z: 0.0, w: 1.0}
-  ]
+ros2 topic pub --once /pose_list geometry_msgs/msg/Pose "{
+  position: {x: 0.675, y: 0.122, z: 0.3475},
+  orientation: {x: 0.0, y: 0.0, z: 0.0, w: 1.0}
 }"
 ```
 
@@ -150,3 +149,14 @@ To visualize the target marker, you need to activate it on RViz by following the
 - select the "Marker" under it, represented by a a green cube
 
 ![Robot training with marker](docs/images/robot_training_with_marker.png)
+
+
+## Running Validator
+
+To run the validator, you can use the following command:
+
+```bash
+ros2 run ur5_motion_planner validator
+```
+
+This will start the validator node, which will generate a random pose and check if the solution is valid. The validator will output the results to the console and log the results to a file.
