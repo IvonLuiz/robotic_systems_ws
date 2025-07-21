@@ -128,3 +128,25 @@ ros2 run ur5_motion_planner dataset_generator_node --num-points 10000 --angle-st
 ```
 The parameters can be changed accordingly, or left as default (1000 steps and 45 degrees).
 Note: the random angle step used in the code will be from [-angle_step, +angle_step].
+
+#### Reinforcement Learning training
+
+To train a custom model, one can change the parameters inside the [config file](src/ur5_motion_planner/config/rl_config.yaml). The default 'total_timesteps' is very large, but can be changed for testing. Also, different STB3 algorithms ad available to be used.
+
+To train the model, we do the same procedure as before to launch the simulation:
+```bash
+ros2 launch gazebo_control ur_sim_control.launch.py
+```
+
+And on another terminal:
+```bash
+ros2 run ur5_motion_planner env_node
+```
+
+To visualize the target marker, you need to activate it on RViz by following the step by step:
+- on the bottom left click on add
+- select the "By topic" tab
+- during training, there will be an option "/target_marker"
+- select the "Marker" under it, represented by a a green cube
+
+![Robot training with marker](docs/images/robot_training_with_marker.png)

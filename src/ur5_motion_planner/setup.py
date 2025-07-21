@@ -25,6 +25,7 @@ setup(
         "PyYAML",
         "matplotlib",
         "seaborn",
+        "pandas",
     ],
     zip_safe=True,
     maintainer="carlos",
