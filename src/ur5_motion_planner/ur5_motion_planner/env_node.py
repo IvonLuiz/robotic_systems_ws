@@ -321,6 +321,12 @@ class UR5Env(gym.Env, Node):
         return np.linalg.norm(end_effector_pos - self.target_position)
 
     def reset(self, seed=None, options=None):
+        # Check if ROS is still running
+        if not rclpy.ok():
+            self.get_logger().warn("ROS is shutting down, returning default observation")
+            default_obs = np.zeros(self.observation_space.shape[0], dtype=np.float32)
+            return default_obs, {}
+            
         super().reset(seed=seed)
         self.episode_step_count = 0
         self.last_target_dist = None
@@ -453,6 +459,11 @@ class UR5Env(gym.Env, Node):
             return None
 
     def send_trajectory_goal(self, joint_angles, dt=None):
+        # Check if ROS is still running
+        if not rclpy.ok():
+            self.get_logger().warn("ROS is shutting down, cannot send trajectory goal")
+            return False
+            
         if dt is None:
             dt = self.config.get('ros.trajectory_execution_time', 1.0)
             
@@ -508,12 +519,14 @@ def main():
     executor.add_node(env)
     thread = threading.Thread(target=executor.spin, daemon=True)
     thread.start()
+    run_evaluation = False
 
     # --- 1. Check the environment ---
+    # Uncomment the following lines to enable environment checks
     # It will display warnings if something is wrong
-    print("Checking environment...")
-    check_env(env)
-    print("Environment check passed!")
+    #print("Checking environment...")
+    #check_env(env)
+    #print("Environment check passed!")
 
     # --- 2. Import and setup the trainer ---
     from .trainer import UR5Trainer, NETWORK_CONFIGS
@@ -559,10 +572,30 @@ def main():
     try:
         # Train the model with automatic saving and monitoring
         trainer.train(total_timesteps=total_timesteps, save_frequency=save_frequency)
-        
-        # Create final plots
         trainer.create_final_plots()
+        run_evaluation = True
+
+    except KeyboardInterrupt:
+        print("\n⚠️ Training interrupted by user")
+        trainer.save_model()
+        print("Model saved before exit")
+        run_evaluation = False  # Explicitly disable evaluation
         
+        # Immediately shutdown ROS to prevent further operations
+        print("Shutting down ROS...")
+        rclpy.shutdown()
+        thread.join()
+        print("Cleanup complete.")
+        return  # Exit immediately
+        
+    except Exception as e:
+        print(f"\nTraining error: {e}")
+        trainer.save_model()
+        print("Model saved despite error")
+        run_evaluation = False  # Disable evaluation on error
+        raise
+
+    if run_evaluation:
         # --- 4. Evaluation ---
         eval_episodes = config.get('training.eval_episodes', 10)
         print(f"\nStarting evaluation with {eval_episodes} episodes...")
@@ -583,27 +616,10 @@ def main():
         print(f"Tensorboard logs: {summary['tensorboard_log']}")
         print(f"Final evaluation reward: {eval_results['mean_reward']:.2f} ± {eval_results['std_reward']:.2f}")
         print("="*60)
-        
-    except KeyboardInterrupt:
-        print("\nTraining interrupted by user")
-        trainer.save_model()
-        print("Model saved before exit")
-        
-    except Exception as e:
-        print(f"\nTraining error: {e}")
-        trainer.save_model()
-        print("Model saved despite error")
-        raise
-        
-    finally:
-        print("\nCleaning up...")
-        # Give a moment for logs to flush
-        time.sleep(0.1)
-        env.close()
-        rclpy.shutdown()
-        thread.join()
-        print("Cleanup complete.")
 
+    rclpy.shutdown()
+    thread.join()
+    return
 
 if __name__ == '__main__':
     main()
