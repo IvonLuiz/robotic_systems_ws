@@ -21,7 +21,7 @@ environment:
     # Spherical workspace bounds (used when target_sampling_method = 'spherical')
     # Uncomment and adjust these if using spherical sampling:
     radius_min: 0.3      # Minimum distance from robot base
-    radius_max: 0.85      # Maximum distance from robot base
+    radius_max: 0.85     # Maximum distance from robot base
     theta_min: -3.14159  # Minimum azimuthal angle (around z-axis)
     theta_max: 3.14159   # Maximum azimuthal angle
     phi_min: 0.0         # Minimum polar angle (0 = straight up)
@@ -72,18 +72,18 @@ model:
 
 # Training Parameters
 training:
-  total_timesteps: 500000  # Significantly increased for proper learning
-  log_interval: 10        # Log every 10 episodes (increased from 4)
-  eval_episodes: 20       # More evaluation episodes for better statistics
+  total_timesteps: 100000
+  log_interval: 10
+  eval_episodes: 20
   tensorboard_log: "./ur5_tensorboard/"
-  model_save_path: "models/ur5_reacher_model_500k.zip"
-  load_pretrained_model: false # Set to true if you want to load a pre-trained model
+  model_save_path: "models/ur5_reacher_model_100k.zip"
+  load_pretrained_model: false
   pretrained_model_path: "models/ur5_reacher_model_50000.zip"
   
-  # Advanced Training Parameters for new trainer
-  auto_save_frequency: 25000  # Save every 25k timesteps (more frequent than before)
-  checkpoint_frequency: 50000  # Checkpoint every 50k timesteps  
-  plot_frequency: 100     # Plot every 100 episodes (less frequent to reduce overhead)
+  # Advanced Training Parameters
+  auto_save_frequency: 25000   # Save every 25k timesteps (more frequent than before)
+  checkpoint_frequency: 50000  # Checkpoint every 50k timesteps
+  plot_frequency: 100          # Plot every 100 episodes
 
 # Joint Limits (radians) - UR5 specific safe limits
 joint_limits:
