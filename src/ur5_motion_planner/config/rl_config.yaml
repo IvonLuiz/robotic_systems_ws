@@ -2,19 +2,19 @@
 
 # Environment Parameters
 environment:
-  max_steps_per_episode: 100  # Reduced: reaching should be faster than 200 steps
-  
+  max_steps_per_episode: 50  # 50 steps × 0.1s = 5 seconds (matching paper)
+
   # Target sampling method: 'cartesian' or 'spherical'
-  target_sampling_method: 'spherical'  # cartesian = direct x,y,z sampling; spherical = even distribution around robot
+  target_sampling_method: 'cartesian'  # Using cartesian to match paper's rectangular boundaries
   
-  # Cartesian workspace bounds (used when target_sampling_method = 'cartesian')
+  # Cartesian workspace bounds (matching paper: 0.7m × 0.5m × 0.4m)
   workspace_bounds:
-    x_min: -0.2
-    x_max: 0.2
-    y_min: -0.2
-    y_max: 0.2
-    z_min: 0.7
-    z_max: 0.9
+    x_min: -0.35   # 0.7m total width, centered: -0.35 to +0.35
+    x_max: 0.35
+    y_min: -0.25   # 0.5m total depth, centered: -0.25 to +0.25  
+    y_max: 0.25
+    z_min: 0.4     # 0.4m total height, starting from reasonable base height
+    z_max: 0.8
 
     max_reach_validation: 0.85  # Maximum reach distance for validation (UR5 reach ~0.85m)
     
@@ -22,7 +22,7 @@ environment:
     # Uncomment and adjust these if using spherical sampling:
     radius_min: 0.3      # Minimum distance from robot base
     radius_max: 0.85     # Maximum distance from robot base
-    theta_min: -3.14159  # Minimum azimuthal angle (around z-axis)
+    theta_min: 0  # Minimum azimuthal angle (around z-axis)
     theta_max: 3.14159   # Maximum azimuthal angle
     phi_min: 0.0         # Minimum polar angle (0 = straight up)
     phi_max: 1.5708      # Maximum polar angle (pi/2 = horizontal)
@@ -35,10 +35,10 @@ environment:
 # Reward Parameters
 reward:
   reward_threshold: 0.35
-  distance_penalty_scale: 3.0
+  distance_penalty_scale: 2.0
   distance_reward_steepness: 2  # Reduced: smoother reward gradient
   closer_reward_scale: 12.0  # more reward for getting closer
-  goal_bonus: 500.0  # significant but not overwhelming
+  goal_bonus: 1.0  # significant but not overwhelming
 
 # Model Parameters
 model:
@@ -76,10 +76,9 @@ training:
   log_interval: 10
   eval_episodes: 20
   tensorboard_log: "./ur5_tensorboard/"
-  model_save_path: "models/ur5_reacher_model_100k.zip"
-  load_pretrained_model: false
-  pretrained_model_path: "models/ur5_reacher_model_50000.zip"
-  
+  load_pretrained_model: true
+  pretrained_model_path: "training_runs/SAC_20250721_122746/models/model_100000.zip"  # Path to the pretrained model
+
   # Advanced Training Parameters
   auto_save_frequency: 25000   # Save every 25k timesteps (more frequent than before)
   checkpoint_frequency: 50000  # Checkpoint every 50k timesteps
