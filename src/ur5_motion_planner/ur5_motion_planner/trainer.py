@@ -249,11 +249,11 @@ class TrainingCallback(BaseCallback):
         sns.set_style("whitegrid")
         sns.set_context("paper", font_scale=1.2)
         
-        fig = plt.figure(figsize=(16, 12))
+        fig = plt.figure(figsize=(15, 5))
         colors = sns.color_palette("husl", 3)
         
-        # Plot 1: Episode Rewards with Smoothed Trend
-        ax1 = plt.subplot(2, 3, 1)
+        # Plot 1: Episode Rewards with Smoothed Trend (Training Progress)
+        ax1 = plt.subplot(1, 3, 1)
         episodes = np.arange(1, len(self.episode_rewards) + 1)
         
         # Raw rewards (lighter)
@@ -271,80 +271,31 @@ class TrainingCallback(BaseCallback):
         ax1.grid(True, alpha=0.3)
         
         # Plot 2: Reward Distribution
-        ax2 = plt.subplot(2, 3, 2)
-        sns.histplot(self.episode_rewards, bins=30, kde=True, color=colors[0], alpha=0.7, ax=ax2)
-        ax2.axvline(np.mean(self.episode_rewards), color=colors[1], linestyle='--', linewidth=2, 
+        ax2 = plt.subplot(1, 3, 2)
+        sns.histplot(self.episode_rewards, bins=30, kde=True, color=colors[1], alpha=0.7, ax=ax2)
+        ax2.axvline(np.mean(self.episode_rewards), color=colors[2], linestyle='--', linewidth=2, 
                    label=f'Mean: {np.mean(self.episode_rewards):.2f}')
         ax2.set_xlabel('Episode Reward', fontweight='bold')
         ax2.set_ylabel('Frequency', fontweight='bold')
         ax2.set_title('Reward Distribution', fontweight='bold', fontsize=14)
         ax2.legend(frameon=True, fancybox=True, shadow=True)
         
-        # Plot 3: Episode Lengths
-        ax3 = plt.subplot(2, 3, 3)
-        smoothed_lengths = self._smooth_data(self.episode_lengths, self.smooth_window)
-        ax3.plot(episodes, self.episode_lengths, alpha=0.3, color=colors[2], linewidth=0.8)
-        ax3.plot(episodes, smoothed_lengths, color=colors[2], linewidth=2.5)
-        ax3.set_xlabel('Episode', fontweight='bold')
-        ax3.set_ylabel('Episode Length', fontweight='bold')
-        ax3.set_title('Episode Length Progress', fontweight='bold', fontsize=14)
-        ax3.grid(True, alpha=0.3)
-        
-        # Plot 4: Cumulative Reward vs Timesteps
-        ax4 = plt.subplot(2, 3, 4)
-        cumulative_rewards = np.cumsum(self.episode_rewards)
-        ax4.plot(self.timesteps, cumulative_rewards, color=colors[1], linewidth=2.5)
-        ax4.set_xlabel('Timesteps', fontweight='bold')
-        ax4.set_ylabel('Cumulative Reward', fontweight='bold')
-        ax4.set_title('Cumulative Performance', fontweight='bold', fontsize=14)
-        ax4.grid(True, alpha=0.3)
-        
-        # Format x-axis in scientific notation if needed
-        if max(self.timesteps) > 5000:
-            ax4.ticklabel_format(style='sci', axis='x', scilimits=(0,0))
-        
-        # Plot 5: Rolling Statistics
-        ax5 = plt.subplot(2, 3, 5)
+        # Plot 3: Rolling Statistics
+        ax3 = plt.subplot(1, 3, 3)
         window = min(50, len(self.episode_rewards) // 4) if len(self.episode_rewards) > 4 else len(self.episode_rewards)
         if window > 1:
             rolling_mean = pd.Series(self.episode_rewards).rolling(window=window, min_periods=1).mean()
             rolling_std = pd.Series(self.episode_rewards).rolling(window=window, min_periods=1).std()
             
-            ax5.plot(episodes, rolling_mean, color=colors[0], linewidth=2.5, label=f'Rolling Mean (w={window})')
-            ax5.fill_between(episodes, rolling_mean - rolling_std, rolling_mean + rolling_std, 
+            ax3.plot(episodes, rolling_mean, color=colors[0], linewidth=2.5, label=f'Rolling Mean (w={window})')
+            ax3.fill_between(episodes, rolling_mean - rolling_std, rolling_mean + rolling_std, 
                            alpha=0.2, color=colors[0], label='±1 Std')
             
-            ax5.set_xlabel('Episode', fontweight='bold')
-            ax5.set_ylabel('Reward', fontweight='bold')
-            ax5.set_title('Rolling Statistics', fontweight='bold', fontsize=14)
-            ax5.legend(frameon=True, fancybox=True, shadow=True)
-            ax5.grid(True, alpha=0.3)
-        
-        # Plot 6: Performance Metrics Summary
-        ax6 = plt.subplot(2, 3, 6)
-        
-        # Calculate key metrics
-        recent_rewards = self.episode_rewards[-min(50, len(self.episode_rewards)):]
-        metrics = {
-            'Mean Reward': np.mean(self.episode_rewards),
-            'Recent Mean\n(last 50)': np.mean(recent_rewards),
-            'Best Reward': np.max(self.episode_rewards),
-            'Std Deviation': np.std(self.episode_rewards),
-        }
-        
-        # Create bar plot
-        bars = ax6.bar(range(len(metrics)), list(metrics.values()), 
-                      color=colors[:len(metrics)], alpha=0.8)
-        ax6.set_xticks(range(len(metrics)))
-        ax6.set_xticklabels(list(metrics.keys()), rotation=45, ha='right')
-        ax6.set_ylabel('Value', fontweight='bold')
-        ax6.set_title('Performance Summary', fontweight='bold', fontsize=14)
-        
-        # Add value labels on bars
-        for bar, value in zip(bars, metrics.values()):
-            height = bar.get_height()
-            ax6.text(bar.get_x() + bar.get_width()/2., height + height*0.01,
-                    f'{value:.2f}', ha='center', va='bottom', fontweight='bold')
+            ax3.set_xlabel('Episode', fontweight='bold')
+            ax3.set_ylabel('Reward', fontweight='bold')
+            ax3.set_title('Rolling Statistics', fontweight='bold', fontsize=14)
+            ax3.legend(frameon=True, fancybox=True, shadow=True)
+            ax3.grid(True, alpha=0.3)
         
         plt.tight_layout(pad=2.0)
         
@@ -406,50 +357,48 @@ class TrainingCallback(BaseCallback):
         sns.set_style("whitegrid")
         sns.set_context("paper", font_scale=1.4)
         
-        fig, axes = plt.subplots(2, 2, figsize=(16, 12))
-        colors = sns.color_palette("Set2", 4)
+        fig, axes = plt.subplots(1, 3, figsize=(18, 6))
+        colors = sns.color_palette("Set2", 3)
         
-        # Main performance curve
+        # Main performance curve (Training Progress)
         episodes = np.arange(1, len(self.episode_rewards) + 1)
         smoothed_rewards = self._smooth_data(self.episode_rewards, self.smooth_window)
         
-        axes[0, 0].plot(episodes, self.episode_rewards, alpha=0.3, color=colors[0], linewidth=1)
-        axes[0, 0].plot(episodes, smoothed_rewards, color=colors[0], linewidth=3, 
+        axes[0].plot(episodes, self.episode_rewards, alpha=0.3, color=colors[0], linewidth=1)
+        axes[0].plot(episodes, smoothed_rewards, color=colors[0], linewidth=3, 
                        label=f'{self.algorithm_name} Performance')
-        axes[0, 0].set_xlabel('Training Episode', fontweight='bold')
-        axes[0, 0].set_ylabel('Episode Reward', fontweight='bold')
-        axes[0, 0].set_title('Learning Curve', fontweight='bold', fontsize=16)
-        axes[0, 0].legend(frameon=True, fancybox=True, shadow=True)
-        axes[0, 0].grid(True, alpha=0.3)
-        
-        # Performance vs Timesteps (for sample efficiency analysis)
-        axes[0, 1].plot(self.timesteps, smoothed_rewards, color=colors[1], linewidth=3)
-        axes[0, 1].set_xlabel('Environment Timesteps', fontweight='bold')
-        axes[0, 1].set_ylabel('Episode Reward', fontweight='bold')
-        axes[0, 1].set_title('Sample Efficiency', fontweight='bold', fontsize=16)
-        axes[0, 1].grid(True, alpha=0.3)
-        if max(self.timesteps) > 5000:
-            axes[0, 1].ticklabel_format(style='sci', axis='x', scilimits=(0,0))
-        
-        # Episode length analysis
-        smoothed_lengths = self._smooth_data(self.episode_lengths, self.smooth_window)
-        axes[1, 0].plot(episodes, self.episode_lengths, alpha=0.3, color=colors[2], linewidth=1)
-        axes[1, 0].plot(episodes, smoothed_lengths, color=colors[2], linewidth=3)
-        axes[1, 0].set_xlabel('Training Episode', fontweight='bold')
-        axes[1, 0].set_ylabel('Episode Length', fontweight='bold')
-        axes[1, 0].set_title('Episode Duration', fontweight='bold', fontsize=16)
-        axes[1, 0].grid(True, alpha=0.3)
+        axes[0].set_xlabel('Training Episode', fontweight='bold')
+        axes[0].set_ylabel('Episode Reward', fontweight='bold')
+        axes[0].set_title('Learning Curve', fontweight='bold', fontsize=16)
+        axes[0].legend(frameon=True, fancybox=True, shadow=True)
+        axes[0].grid(True, alpha=0.3)
         
         # Final performance distribution
-        sns.histplot(self.episode_rewards, bins=30, kde=True, color=colors[3], alpha=0.7, ax=axes[1, 1])
-        axes[1, 1].axvline(np.mean(self.episode_rewards), color='red', linestyle='--', linewidth=2, 
+        sns.histplot(self.episode_rewards, bins=30, kde=True, color=colors[1], alpha=0.7, ax=axes[1])
+        axes[1].axvline(np.mean(self.episode_rewards), color='red', linestyle='--', linewidth=2, 
                           label=f'Mean: {np.mean(self.episode_rewards):.2f}')
-        axes[1, 1].set_xlabel('Episode Reward', fontweight='bold')
-        axes[1, 1].set_ylabel('Frequency', fontweight='bold')
-        axes[1, 1].set_title('Final Performance Distribution', fontweight='bold', fontsize=16)
-        axes[1, 1].legend(frameon=True, fancybox=True, shadow=True)
+        axes[1].set_xlabel('Episode Reward', fontweight='bold')
+        axes[1].set_ylabel('Frequency', fontweight='bold')
+        axes[1].set_title('Final Performance Distribution', fontweight='bold', fontsize=16)
+        axes[1].legend(frameon=True, fancybox=True, shadow=True)
         
-        plt.suptitle(f'{self.algorithm_name} Training Report', fontsize=20, fontweight='bold', y=0.98)
+        # Rolling statistics
+        window = min(50, len(self.episode_rewards) // 4) if len(self.episode_rewards) > 4 else len(self.episode_rewards)
+        if window > 1:
+            rolling_mean = pd.Series(self.episode_rewards).rolling(window=window, min_periods=1).mean()
+            rolling_std = pd.Series(self.episode_rewards).rolling(window=window, min_periods=1).std()
+            
+            axes[2].plot(episodes, rolling_mean, color=colors[2], linewidth=3, label=f'Rolling Mean (w={window})')
+            axes[2].fill_between(episodes, rolling_mean - rolling_std, rolling_mean + rolling_std, 
+                               alpha=0.2, color=colors[2], label='±1 Std')
+            
+            axes[2].set_xlabel('Training Episode', fontweight='bold')
+            axes[2].set_ylabel('Episode Reward', fontweight='bold')
+            axes[2].set_title('Rolling Statistics', fontweight='bold', fontsize=16)
+            axes[2].legend(frameon=True, fancybox=True, shadow=True)
+            axes[2].grid(True, alpha=0.3)
+        
+        plt.suptitle(f'{self.algorithm_name} Training Report', fontsize=20, fontweight='bold', y=1.02)
         plt.tight_layout(pad=3.0)
         
         # Save final report
