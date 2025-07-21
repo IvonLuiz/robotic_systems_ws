@@ -15,6 +15,8 @@ import time
 import threading
 import numpy as np
 import matplotlib.pyplot as plt
+import seaborn as sns
+import pandas as pd
 from pathlib import Path
 from typing import Dict, Any, Optional, Tuple, List
 from datetime import datetime
@@ -65,7 +67,7 @@ class CustomMLP(BaseFeaturesExtractor):
             layers.extend([
                 nn.Linear(prev_dim, hidden_dim),
                 activation_fn(),
-                nn.Dropout(0.1),  # Add dropout for regularization
+                nn.Dropout(0.1),
             ])
             prev_dim = hidden_dim
         
@@ -106,94 +108,301 @@ class CustomActorCriticPolicy(ActorCriticPolicy):
 
 class TrainingCallback(BaseCallback):
     """
-    Custom callback for monitoring training progress and creating plots.
+    Professional-grade callback for monitoring training progress and creating publication-quality plots.
     """
     
-    def __init__(self, save_path: str, plot_freq: int = 1000, verbose: int = 0):
+    def __init__(self, save_path: str, plot_freq: int = 50, verbose: int = 0, 
+                 algorithm_name: str = 'RL', smooth_window: int = 10):
         super().__init__(verbose)
         self.save_path = save_path
         self.plot_freq = plot_freq
+        self.algorithm_name = algorithm_name
+        self.smooth_window = smooth_window
         
         # Training metrics
         self.episode_rewards = []
         self.episode_lengths = []
         self.timesteps = []
-        self.losses = []
+        self.episode_numbers = []
+        self.training_losses = []
         
         # Current episode tracking
         self.current_episode_reward = 0
         self.current_episode_length = 0
+        self.episode_count = 0
+        
+        # DataFrame for professional plotting
+        self.training_data = pd.DataFrame()
         
     def _on_step(self) -> bool:
         # Track episode progress
-        self.current_episode_reward += self.locals.get('rewards', [0])[0]
+        reward = self.locals.get('rewards', [0])[0] if self.locals.get('rewards') is not None else 0
+        self.current_episode_reward += reward
         self.current_episode_length += 1
         
         # Check if episode is done
-        if self.locals.get('dones', [False])[0]:
+        done = self.locals.get('dones', [False])[0] if self.locals.get('dones') is not None else False
+        if done:
+            self.episode_count += 1
             self.episode_rewards.append(self.current_episode_reward)
             self.episode_lengths.append(self.current_episode_length)
             self.timesteps.append(self.num_timesteps)
+            self.episode_numbers.append(self.episode_count)
+            
+            # Update DataFrame
+            new_row = pd.DataFrame({
+                'Episode': [self.episode_count],
+                'Timestep': [self.num_timesteps],
+                'EpisodeReward': [self.current_episode_reward],
+                'EpisodeLength': [self.current_episode_length],
+                'Algorithm': [self.algorithm_name],
+                'Unit': [0],  # For compatibility with multi-run experiments
+                'Condition': [self.algorithm_name]
+            })
+            self.training_data = pd.concat([self.training_data, new_row], ignore_index=True)
             
             # Reset for next episode
             self.current_episode_reward = 0
             self.current_episode_length = 0
             
             # Create plots periodically
-            if len(self.episode_rewards) % self.plot_freq == 0:
-                self._create_plots()
+            if self.episode_count % self.plot_freq == 0 and self.episode_count > 0:
+                self._create_professional_plots()
         
         return True
     
-    def _create_plots(self):
-        """Create and save training progress plots."""
+    def _smooth_data(self, data, window_size):
+        """Apply moving average smoothing to data."""
+        if len(data) < window_size:
+            return data
+        
+        smoothed = []
+        for i in range(len(data)):
+            start_idx = max(0, i - window_size // 2)
+            end_idx = min(len(data), i + window_size // 2 + 1)
+            smoothed.append(np.mean(data[start_idx:end_idx]))
+        return smoothed
+    
+    def _create_professional_plots(self):
+        """Create publication-quality training plots using seaborn."""
         if len(self.episode_rewards) < 2:
             return
+        
+        # Set the aesthetic style
+        sns.set_style("whitegrid")
+        sns.set_context("paper", font_scale=1.2)
+        
+        fig = plt.figure(figsize=(16, 12))
+        colors = sns.color_palette("husl", 3)
+        
+        # Plot 1: Episode Rewards with Smoothed Trend
+        ax1 = plt.subplot(2, 3, 1)
+        episodes = np.arange(1, len(self.episode_rewards) + 1)
+        
+        # Raw rewards (lighter)
+        ax1.plot(episodes, self.episode_rewards, alpha=0.3, color=colors[0], linewidth=0.8, label='Raw')
+        
+        # Smoothed rewards (darker)
+        smoothed_rewards = self._smooth_data(self.episode_rewards, self.smooth_window)
+        ax1.plot(episodes, smoothed_rewards, color=colors[0], linewidth=2.5, 
+                label=f'Smoothed (window={self.smooth_window})')
+        
+        ax1.set_xlabel('Episode', fontweight='bold')
+        ax1.set_ylabel('Episode Reward', fontweight='bold')
+        ax1.set_title(f'{self.algorithm_name} Training Progress', fontweight='bold', fontsize=14)
+        ax1.legend(frameon=True, fancybox=True, shadow=True)
+        ax1.grid(True, alpha=0.3)
+        
+        # Plot 2: Reward Distribution
+        ax2 = plt.subplot(2, 3, 2)
+        sns.histplot(self.episode_rewards, bins=30, kde=True, color=colors[0], alpha=0.7, ax=ax2)
+        ax2.axvline(np.mean(self.episode_rewards), color=colors[1], linestyle='--', linewidth=2, 
+                   label=f'Mean: {np.mean(self.episode_rewards):.2f}')
+        ax2.set_xlabel('Episode Reward', fontweight='bold')
+        ax2.set_ylabel('Frequency', fontweight='bold')
+        ax2.set_title('Reward Distribution', fontweight='bold', fontsize=14)
+        ax2.legend(frameon=True, fancybox=True, shadow=True)
+        
+        # Plot 3: Episode Lengths
+        ax3 = plt.subplot(2, 3, 3)
+        smoothed_lengths = self._smooth_data(self.episode_lengths, self.smooth_window)
+        ax3.plot(episodes, self.episode_lengths, alpha=0.3, color=colors[2], linewidth=0.8)
+        ax3.plot(episodes, smoothed_lengths, color=colors[2], linewidth=2.5)
+        ax3.set_xlabel('Episode', fontweight='bold')
+        ax3.set_ylabel('Episode Length', fontweight='bold')
+        ax3.set_title('Episode Length Progress', fontweight='bold', fontsize=14)
+        ax3.grid(True, alpha=0.3)
+        
+        # Plot 4: Cumulative Reward vs Timesteps
+        ax4 = plt.subplot(2, 3, 4)
+        cumulative_rewards = np.cumsum(self.episode_rewards)
+        ax4.plot(self.timesteps, cumulative_rewards, color=colors[1], linewidth=2.5)
+        ax4.set_xlabel('Timesteps', fontweight='bold')
+        ax4.set_ylabel('Cumulative Reward', fontweight='bold')
+        ax4.set_title('Cumulative Performance', fontweight='bold', fontsize=14)
+        ax4.grid(True, alpha=0.3)
+        
+        # Format x-axis in scientific notation if needed
+        if max(self.timesteps) > 5000:
+            ax4.ticklabel_format(style='sci', axis='x', scilimits=(0,0))
+        
+        # Plot 5: Rolling Statistics
+        ax5 = plt.subplot(2, 3, 5)
+        window = min(50, len(self.episode_rewards) // 4) if len(self.episode_rewards) > 4 else len(self.episode_rewards)
+        if window > 1:
+            rolling_mean = pd.Series(self.episode_rewards).rolling(window=window, min_periods=1).mean()
+            rolling_std = pd.Series(self.episode_rewards).rolling(window=window, min_periods=1).std()
             
-        fig, ((ax1, ax2), (ax3, ax4)) = plt.subplots(2, 2, figsize=(15, 10))
+            ax5.plot(episodes, rolling_mean, color=colors[0], linewidth=2.5, label=f'Rolling Mean (w={window})')
+            ax5.fill_between(episodes, rolling_mean - rolling_std, rolling_mean + rolling_std, 
+                           alpha=0.2, color=colors[0], label='±1 Std')
+            
+            ax5.set_xlabel('Episode', fontweight='bold')
+            ax5.set_ylabel('Reward', fontweight='bold')
+            ax5.set_title('Rolling Statistics', fontweight='bold', fontsize=14)
+            ax5.legend(frameon=True, fancybox=True, shadow=True)
+            ax5.grid(True, alpha=0.3)
         
-        # Episode rewards
-        ax1.plot(self.episode_rewards)
-        ax1.set_title('Episode Rewards')
-        ax1.set_xlabel('Episode')
-        ax1.set_ylabel('Total Reward')
-        ax1.grid(True)
+        # Plot 6: Performance Metrics Summary
+        ax6 = plt.subplot(2, 3, 6)
         
-        # Moving average of rewards
-        if len(self.episode_rewards) >= 10:
-            window = min(50, len(self.episode_rewards) // 4)
-            moving_avg = np.convolve(self.episode_rewards, np.ones(window)/window, mode='valid')
-            ax2.plot(moving_avg)
-            ax2.set_title(f'Moving Average Rewards (window={window})')
-            ax2.set_xlabel('Episode')
-            ax2.set_ylabel('Average Reward')
-            ax2.grid(True)
+        # Calculate key metrics
+        recent_rewards = self.episode_rewards[-min(50, len(self.episode_rewards)):]
+        metrics = {
+            'Mean Reward': np.mean(self.episode_rewards),
+            'Recent Mean\n(last 50)': np.mean(recent_rewards),
+            'Best Reward': np.max(self.episode_rewards),
+            'Std Deviation': np.std(self.episode_rewards),
+        }
         
-        # Episode lengths
-        ax3.plot(self.episode_lengths)
-        ax3.set_title('Episode Lengths')
-        ax3.set_xlabel('Episode')
-        ax3.set_ylabel('Steps')
-        ax3.grid(True)
+        # Create bar plot
+        bars = ax6.bar(range(len(metrics)), list(metrics.values()), 
+                      color=colors[:len(metrics)], alpha=0.8)
+        ax6.set_xticks(range(len(metrics)))
+        ax6.set_xticklabels(list(metrics.keys()), rotation=45, ha='right')
+        ax6.set_ylabel('Value', fontweight='bold')
+        ax6.set_title('Performance Summary', fontweight='bold', fontsize=14)
         
-        # Reward distribution
-        ax4.hist(self.episode_rewards, bins=30, alpha=0.7)
-        ax4.set_title('Reward Distribution')
-        ax4.set_xlabel('Total Reward')
-        ax4.set_ylabel('Frequency')
-        ax4.grid(True)
+        # Add value labels on bars
+        for bar, value in zip(bars, metrics.values()):
+            height = bar.get_height()
+            ax6.text(bar.get_x() + bar.get_width()/2., height + height*0.01,
+                    f'{value:.2f}', ha='center', va='bottom', fontweight='bold')
         
-        plt.tight_layout()
-        plot_path = os.path.join(self.save_path, f'training_progress_{len(self.episode_rewards)}.png')
-        plt.savefig(plot_path, dpi=300, bbox_inches='tight')
+        plt.tight_layout(pad=2.0)
+        
+        # Save the plot
+        plot_path = os.path.join(self.save_path, f'training_analysis_ep{self.episode_count}.png')
+        plt.savefig(plot_path, dpi=300, bbox_inches='tight', facecolor='white')
         plt.close()
         
-        # Save metrics as CSV
-        metrics_path = os.path.join(self.save_path, 'training_metrics.csv')
-        with open(metrics_path, 'w') as f:
-            f.write('episode,timestep,reward,length\n')
-            for i, (ts, reward, length) in enumerate(zip(self.timesteps, self.episode_rewards, self.episode_lengths)):
-                f.write(f'{i+1},{ts},{reward},{length}\n')
+        # Save data for external plotting tools
+        self._save_training_data()
+        
+        print(f"📊 Training plots saved: {plot_path}")
+    
+    def _save_training_data(self):
+        """Save training data in multiple formats for analysis."""
+        # Save as CSV (compatible with the professional plotting tools)
+        csv_path = os.path.join(self.save_path, 'training_progress.csv')
+        self.training_data.to_csv(csv_path, index=False)
+        
+        # Save detailed metrics
+        metrics_path = os.path.join(self.save_path, 'detailed_metrics.csv')
+        detailed_df = pd.DataFrame({
+            'Episode': self.episode_numbers,
+            'Timestep': self.timesteps,
+            'EpisodeReward': self.episode_rewards,
+            'EpisodeLength': self.episode_lengths,
+            'CumulativeReward': np.cumsum(self.episode_rewards),
+            'AverageReward': np.cumsum(self.episode_rewards) / np.arange(1, len(self.episode_rewards) + 1),
+            'Algorithm': [self.algorithm_name] * len(self.episode_rewards)
+        })
+        detailed_df.to_csv(metrics_path, index=False)
+        
+        # Save summary statistics
+        summary_path = os.path.join(self.save_path, 'training_summary.txt')
+        with open(summary_path, 'w') as f:
+            f.write(f"Training Summary for {self.algorithm_name}\n")
+            f.write("=" * 50 + "\n")
+            f.write(f"Total Episodes: {len(self.episode_rewards)}\n")
+            f.write(f"Total Timesteps: {self.timesteps[-1] if self.timesteps else 0}\n")
+            f.write(f"Mean Episode Reward: {np.mean(self.episode_rewards):.3f} ± {np.std(self.episode_rewards):.3f}\n")
+            f.write(f"Best Episode Reward: {np.max(self.episode_rewards):.3f}\n")
+            f.write(f"Worst Episode Reward: {np.min(self.episode_rewards):.3f}\n")
+            f.write(f"Mean Episode Length: {np.mean(self.episode_lengths):.1f} ± {np.std(self.episode_lengths):.1f}\n")
+            
+            # Recent performance (last 25% of episodes)
+            recent_start = max(0, len(self.episode_rewards) - len(self.episode_rewards) // 4)
+            recent_rewards = self.episode_rewards[recent_start:]
+            if recent_rewards:
+                f.write(f"\nRecent Performance (last {len(recent_rewards)} episodes):\n")
+                f.write(f"Mean Reward: {np.mean(recent_rewards):.3f} ± {np.std(recent_rewards):.3f}\n")
+                f.write(f"Improvement: {np.mean(recent_rewards) - np.mean(self.episode_rewards[:len(self.episode_rewards)//4]) if len(self.episode_rewards) > 4 else 0:.3f}\n")
+    
+    def create_final_report(self):
+        """Create a comprehensive final training report."""
+        if not self.episode_rewards:
+            return
+            
+        # Create final comprehensive plot
+        sns.set_style("whitegrid")
+        sns.set_context("paper", font_scale=1.4)
+        
+        fig, axes = plt.subplots(2, 2, figsize=(16, 12))
+        colors = sns.color_palette("Set2", 4)
+        
+        # Main performance curve
+        episodes = np.arange(1, len(self.episode_rewards) + 1)
+        smoothed_rewards = self._smooth_data(self.episode_rewards, self.smooth_window)
+        
+        axes[0, 0].plot(episodes, self.episode_rewards, alpha=0.3, color=colors[0], linewidth=1)
+        axes[0, 0].plot(episodes, smoothed_rewards, color=colors[0], linewidth=3, 
+                       label=f'{self.algorithm_name} Performance')
+        axes[0, 0].set_xlabel('Training Episode', fontweight='bold')
+        axes[0, 0].set_ylabel('Episode Reward', fontweight='bold')
+        axes[0, 0].set_title('Learning Curve', fontweight='bold', fontsize=16)
+        axes[0, 0].legend(frameon=True, fancybox=True, shadow=True)
+        axes[0, 0].grid(True, alpha=0.3)
+        
+        # Performance vs Timesteps (for sample efficiency analysis)
+        axes[0, 1].plot(self.timesteps, smoothed_rewards, color=colors[1], linewidth=3)
+        axes[0, 1].set_xlabel('Environment Timesteps', fontweight='bold')
+        axes[0, 1].set_ylabel('Episode Reward', fontweight='bold')
+        axes[0, 1].set_title('Sample Efficiency', fontweight='bold', fontsize=16)
+        axes[0, 1].grid(True, alpha=0.3)
+        if max(self.timesteps) > 5000:
+            axes[0, 1].ticklabel_format(style='sci', axis='x', scilimits=(0,0))
+        
+        # Episode length analysis
+        smoothed_lengths = self._smooth_data(self.episode_lengths, self.smooth_window)
+        axes[1, 0].plot(episodes, self.episode_lengths, alpha=0.3, color=colors[2], linewidth=1)
+        axes[1, 0].plot(episodes, smoothed_lengths, color=colors[2], linewidth=3)
+        axes[1, 0].set_xlabel('Training Episode', fontweight='bold')
+        axes[1, 0].set_ylabel('Episode Length', fontweight='bold')
+        axes[1, 0].set_title('Episode Duration', fontweight='bold', fontsize=16)
+        axes[1, 0].grid(True, alpha=0.3)
+        
+        # Final performance distribution
+        sns.histplot(self.episode_rewards, bins=30, kde=True, color=colors[3], alpha=0.7, ax=axes[1, 1])
+        axes[1, 1].axvline(np.mean(self.episode_rewards), color='red', linestyle='--', linewidth=2, 
+                          label=f'Mean: {np.mean(self.episode_rewards):.2f}')
+        axes[1, 1].set_xlabel('Episode Reward', fontweight='bold')
+        axes[1, 1].set_ylabel('Frequency', fontweight='bold')
+        axes[1, 1].set_title('Final Performance Distribution', fontweight='bold', fontsize=16)
+        axes[1, 1].legend(frameon=True, fancybox=True, shadow=True)
+        
+        plt.suptitle(f'{self.algorithm_name} Training Report', fontsize=20, fontweight='bold', y=0.98)
+        plt.tight_layout(pad=3.0)
+        
+        # Save final report
+        final_path = os.path.join(self.save_path, 'final_training_report.png')
+        plt.savefig(final_path, dpi=300, bbox_inches='tight', facecolor='white')
+        plt.close()
+        
+        print(f"📈 Final training report saved: {final_path}")
+        
+        return final_path
 
 
 class UR5Trainer:
@@ -214,6 +423,9 @@ class UR5Trainer:
         self.config = config
         self.custom_network_config = custom_network_config or {}
         
+        # Setup GPU/CPU device
+        self.setup_device()
+        
         # Setup paths
         self.setup_paths()
         
@@ -225,6 +437,24 @@ class UR5Trainer:
         
         # Callbacks
         self.callbacks = []
+        
+    def setup_device(self):
+        """Setup GPU/CPU device for training."""
+        if torch.cuda.is_available():
+            self.device = torch.device("cuda:0")
+            gpu_name = torch.cuda.get_device_name(0)
+            gpu_memory = torch.cuda.get_device_properties(0).total_memory / 1024**3
+            print(f"🚀 GPU detected: {gpu_name}")
+            print(f"💾 GPU memory: {gpu_memory:.1f} GB")
+            print(f"🔥 Using GPU for training: {self.device}")
+        else:
+            self.device = torch.device("cpu")
+            print("⚠️ GPU not available, using CPU for training")
+            print("💡 To use GPU, ensure CUDA-compatible PyTorch is installed")
+        
+        # Set device for stable-baselines3
+        # Note: SB3 will automatically use GPU if torch.cuda.is_available()
+        torch.cuda.empty_cache() if torch.cuda.is_available() else None
         
     def setup_paths(self):
         """Setup all necessary directories and paths."""
@@ -298,12 +528,14 @@ class UR5Trainer:
         
         return "MlpPolicy"  # Fallback to default
     
-    def setup_callbacks(self):
+    def setup_callbacks(self, algorithm_name: str = 'RL'):
         """Setup training callbacks for monitoring and checkpointing."""
-        # Training progress callback
+        # Training progress callback with professional plotting
         progress_callback = TrainingCallback(
             save_path=str(self.plots_dir),
-            plot_freq=self.config.get('training.plot_frequency', 50)
+            plot_freq=self.config.get('training.plot_frequency', 50),
+            algorithm_name=algorithm_name,
+            smooth_window=self.config.get('training.smooth_window', 10)
         )
         
         # Checkpoint callback - save model every N timesteps
@@ -342,9 +574,13 @@ class UR5Trainer:
         
         # Create custom policy
         policy = self.create_custom_policy(AlgorithmClass)
+        print(f"Using custom policy: {policy.__name__ if isinstance(policy, type) else policy}")
         
         # Add tensorboard logging
         model_kwargs['tensorboard_log'] = self.tensorboard_log
+        
+        # Add device configuration for GPU usage
+        model_kwargs['device'] = self.device
         
         # Create model
         self.model = AlgorithmClass(
@@ -354,10 +590,33 @@ class UR5Trainer:
         )
         
         print(f"Created {algorithm_name} model with custom architecture")
+        print(f"Model device: {self.device}")
         if self.custom_network_config:
             print(f"Network config: {self.custom_network_config}")
         
         return self.model
+    
+    def check_gpu_usage(self):
+        """Check and display current GPU usage."""
+        if torch.cuda.is_available():
+            allocated = torch.cuda.memory_allocated(0) / 1024**3
+            cached = torch.cuda.memory_reserved(0) / 1024**3
+            total = torch.cuda.get_device_properties(0).total_memory / 1024**3
+            
+            print(f"🔥 GPU Memory Usage:")
+            print(f"   Allocated: {allocated:.2f} GB")
+            print(f"   Cached: {cached:.2f} GB")
+            print(f"   Total: {total:.2f} GB")
+            print(f"   Utilization: {(allocated/total)*100:.1f}%")
+            return {
+                'allocated_gb': allocated,
+                'cached_gb': cached,
+                'total_gb': total,
+                'utilization_percent': (allocated/total)*100
+            }
+        else:
+            print("❌ GPU not available")
+            return None
     
     def load_model(self, model_path: str):
         """Load a pre-trained model."""
@@ -401,10 +660,8 @@ class UR5Trainer:
         if total_timesteps is None:
             total_timesteps = self.config.get('training.total_timesteps', 100000)
         
-        # Setup callbacks
-        self.setup_callbacks()
-        
-        # Start training
+        algorithm_name = self.config.get('model.algorithm', 'SAC')
+        self.setup_callbacks(algorithm_name)
         self.is_training = True
         self.training_start_time = time.time()
         
@@ -421,6 +678,8 @@ class UR5Trainer:
                     self.trainer = trainer
                     self.save_freq = save_freq
                     self.last_save = 0
+                    self.last_gpu_check = 0
+                    self.gpu_check_freq = save_freq  # Check GPU usage when saving
                 
                 def _on_step(self):
                     if self.num_timesteps - self.last_save >= self.save_freq:
@@ -428,7 +687,14 @@ class UR5Trainer:
                         self.trainer.model.save(save_path)
                         self.trainer.save_model()  # Also save as latest
                         self.last_save = self.num_timesteps
-                        print(f"Auto-saved model at timestep {self.num_timesteps}")
+                        print(f"💾 Auto-saved model at timestep {self.num_timesteps}")
+                        
+                        # Check GPU usage when saving
+                        if torch.cuda.is_available():
+                            gpu_info = self.trainer.check_gpu_usage()
+                            if gpu_info and gpu_info['utilization_percent'] > 90:
+                                print("⚠️ High GPU memory usage detected!")
+                    
                     return True
             
             auto_save_callback = AutoSaveCallback(self, save_frequency)
@@ -447,14 +713,14 @@ class UR5Trainer:
             self.save_model(final_model_path)
             
             training_time = time.time() - self.training_start_time
-            print(f"Training completed in {training_time:.2f} seconds")
+            print(f"✅ Training completed in {training_time:.2f} seconds")
             
         except KeyboardInterrupt:
-            print("Training interrupted by user")
+            print("⚠️ Training interrupted by user")
             self.save_model()
             
         except Exception as e:
-            print(f"Training error: {e}")
+            print(f"❌ Training error: {e}")
             self.save_model()  # Save what we have
             raise
         
@@ -524,8 +790,13 @@ class UR5Trainer:
                 break
         
         if training_callback and len(training_callback.episode_rewards) > 0:
-            training_callback._create_plots()
-            print(f"Final plots saved to: {self.plots_dir}")
+            # Create final comprehensive report
+            final_report_path = training_callback.create_final_report()
+            print(f"📈 Final comprehensive plots saved to: {self.plots_dir}")
+            return final_report_path
+        else:
+            print("No training callback found or no episode data available")
+            return None
     
     def get_training_summary(self):
         """Get a summary of the training session."""
@@ -538,6 +809,8 @@ class UR5Trainer:
             'algorithm': self.config.get('model.algorithm', 'Unknown'),
             'total_timesteps': self.config.get('training.total_timesteps', 0),
             'training_time': training_time,
+            'device': str(self.device),
+            'gpu_available': torch.cuda.is_available(),
             'models_dir': str(self.models_dir),
             'plots_dir': str(self.plots_dir),
             'tensorboard_log': self.tensorboard_log,
@@ -585,3 +858,69 @@ NETWORK_CONFIGS = {
     'deep': create_custom_network_config([512, 512, 256, 256, 128], 'ReLU', [256, 256]),
     'wide': create_custom_network_config([1024, 512, 256], 'ReLU', [512, 512])
 }
+
+
+def check_gpu_setup():
+    """
+    Utility function to check GPU setup for RL training.
+    Call this before training to verify everything is configured correctly.
+    """
+    print("="*60)
+    print("🔍 GPU SETUP VERIFICATION")
+    print("="*60)
+    
+    # Check PyTorch installation
+    print(f"🐍 PyTorch version: {torch.__version__}")
+    
+    # Check CUDA availability
+    if torch.cuda.is_available():
+        print("✅ CUDA is available!")
+        print(f"🔥 CUDA version: {torch.version.cuda}")
+        
+        # GPU details
+        gpu_count = torch.cuda.device_count()
+        print(f"🖥️ Number of GPUs: {gpu_count}")
+        
+        for i in range(gpu_count):
+            gpu_name = torch.cuda.get_device_name(i)
+            gpu_memory = torch.cuda.get_device_properties(i).total_memory / 1024**3
+            print(f"   GPU {i}: {gpu_name} ({gpu_memory:.1f} GB)")
+        
+        # Test GPU access
+        try:
+            device = torch.device("cuda:0")
+            test_tensor = torch.randn(1000, 1000).to(device)
+            result = torch.mm(test_tensor, test_tensor.T)
+            print("✅ GPU computation test passed!")
+            
+            # Memory info
+            allocated = torch.cuda.memory_allocated(0) / 1024**3
+            cached = torch.cuda.memory_reserved(0) / 1024**3
+            print(f"📊 Current GPU memory: {allocated:.2f} GB allocated, {cached:.2f} GB cached")
+            
+        except Exception as e:
+            print(f"❌ GPU test failed: {e}")
+            
+    else:
+        print("❌ CUDA is not available")
+        print("💡 Possible solutions:")
+        print("   - Install CUDA-enabled PyTorch: pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118")
+        print("   - Check NVIDIA drivers: nvidia-smi")
+        print("   - Verify CUDA installation")
+    
+    # Check if Stable Baselines3 will use GPU
+    print("\n🤖 Stable Baselines3 GPU Support:")
+    if torch.cuda.is_available():
+        print("✅ SB3 will automatically use GPU for neural network training")
+        print("🚀 Models will be trained on GPU for faster performance")
+    else:
+        print("⚠️ SB3 will use CPU (slower training)")
+    
+    print("="*60)
+    
+    return torch.cuda.is_available()
+
+
+if __name__ == "__main__":
+    # Quick GPU check when running this file directly
+    check_gpu_setup()
