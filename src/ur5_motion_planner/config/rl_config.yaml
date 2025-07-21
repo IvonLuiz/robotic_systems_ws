@@ -34,24 +34,24 @@ environment:
 
 # Reward Parameters
 reward:
-  reward_threshold: 0.15  # Reduced: tighter threshold for positive rewards
-  distance_penalty_scale: 2.0  # Reduced: less harsh penalty for exploration
+  reward_threshold: 0.35
+  distance_penalty_scale: 3.0
   distance_reward_steepness: 2  # Reduced: smoother reward gradient
-  closer_reward_scale: 15.0  # Increased: more reward for getting closer
-  goal_bonus: 500.0  # Reduced: still significant but not overwhelming
+  closer_reward_scale: 12.0  # more reward for getting closer
+  goal_bonus: 500.0  # significant but not overwhelming
 
 # Model Parameters
 model:
   algorithm: "SAC"  # Available algorithms: SAC, TD3, DDPG, PPO, A2C
   policy: "MlpPolicy" # options: MlpPolicy, CnnPolicy, etc.
-  network_type: "medium"  # medium is often better for robotic tasks than large
-  learning_rate: 0.0003  # Good default for SAC
-  buffer_size: 1000000   # Good size for continuous learning
-  learning_starts: 1000   # Increased: better initial exploration before learning
-  batch_size: 256        # Good default
+  network_type: "large"  # options are: "small", "medium", "large", "deep", "wide"
+  learning_rate: 0.0003
+  buffer_size: 1000000   # size for continuous learning
+  learning_starts: 1000   # increasing results in better initial exploration before learning
+  batch_size: 256
   tau: 0.005            # Good soft update rate
   gamma: 0.99           # Good discount factor for episodic tasks
-  gradient_steps: 1     # Good default
+  gradient_steps: 1
   ent_coef: "auto"      # Auto-tuning is recommended for SAC
   target_update_interval: 1  # Good for SAC
   verbose: 1
