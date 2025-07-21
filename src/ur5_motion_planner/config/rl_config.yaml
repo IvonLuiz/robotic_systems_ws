@@ -1,0 +1,100 @@
+# RL Training Configuration for UR5 Environment
+
+# Environment Parameters
+environment:
+  max_steps_per_episode: 100  # Reduced: reaching should be faster than 200 steps
+  
+  # Target sampling method: 'cartesian' or 'spherical'
+  target_sampling_method: 'spherical'  # cartesian = direct x,y,z sampling; spherical = even distribution around robot
+  
+  # Cartesian workspace bounds (used when target_sampling_method = 'cartesian')
+  workspace_bounds:
+    x_min: -0.2
+    x_max: 0.2
+    y_min: -0.2
+    y_max: 0.2
+    z_min: 0.7
+    z_max: 0.9
+
+    max_reach_validation: 0.85  # Maximum reach distance for validation (UR5 reach ~0.85m)
+    
+    # Spherical workspace bounds (used when target_sampling_method = 'spherical')
+    # Uncomment and adjust these if using spherical sampling:
+    radius_min: 0.3      # Minimum distance from robot base
+    radius_max: 0.85     # Maximum distance from robot base
+    theta_min: -3.14159  # Minimum azimuthal angle (around z-axis)
+    theta_max: 3.14159   # Maximum azimuthal angle
+    phi_min: 0.0         # Minimum polar angle (0 = straight up)
+    phi_max: 1.5708      # Maximum polar angle (pi/2 = horizontal)
+    z_offset: 0.1        # Height offset from robot base
+  
+  goal_tolerance: 0.05  # distance tolerance for reaching the goal
+  action_scale: 1.0     # scale factor for velocity actions
+  dt: 0.1               # time step for velocity integration
+
+# Reward Parameters
+reward:
+  reward_threshold: 0.35
+  distance_penalty_scale: 3.0
+  distance_reward_steepness: 2  # Reduced: smoother reward gradient
+  closer_reward_scale: 12.0  # more reward for getting closer
+  goal_bonus: 500.0  # significant but not overwhelming
+
+# Model Parameters
+model:
+  algorithm: "SAC"  # Available algorithms: SAC, TD3, DDPG, PPO, A2C
+  policy: "MlpPolicy" # options: MlpPolicy, CnnPolicy, etc.
+  network_type: "large"  # options are: "small", "medium", "large", "deep", "wide"
+  learning_rate: 0.0003
+  buffer_size: 1000000   # size for continuous learning
+  learning_starts: 1000   # increasing results in better initial exploration before learning
+  batch_size: 256
+  tau: 0.005            # Good soft update rate
+  gamma: 0.99           # Good discount factor for episodic tasks
+  gradient_steps: 1
+  ent_coef: "auto"      # Auto-tuning is recommended for SAC
+  target_update_interval: 1  # Good for SAC
+  verbose: 1
+  
+  # Algorithm-specific parameters (only used when relevant)
+  # PPO/A2C specific
+  n_steps: 2048
+  n_epochs: 10
+  clip_range: 0.2
+  vf_coef: 0.5
+  ent_coef_ppo: 0.0
+  max_grad_norm: 0.5
+  
+  # TD3 specific
+  policy_delay: 2
+  target_policy_noise: 0.2
+  target_noise_clip: 0.5
+
+# Training Parameters
+training:
+  total_timesteps: 100000
+  log_interval: 10
+  eval_episodes: 20
+  tensorboard_log: "./ur5_tensorboard/"
+  model_save_path: "models/ur5_reacher_model_100k.zip"
+  load_pretrained_model: false
+  pretrained_model_path: "models/ur5_reacher_model_50000.zip"
+  
+  # Advanced Training Parameters
+  auto_save_frequency: 25000   # Save every 25k timesteps (more frequent than before)
+  checkpoint_frequency: 50000  # Checkpoint every 50k timesteps
+  plot_frequency: 100          # Plot every 100 episodes
+
+# Joint Limits (radians) - UR5 specific safe limits
+joint_limits:
+  lower: [-3.14159, -3.14159, -2.79253, -3.14159, -3.14159, -3.14159]
+  upper: [3.14159, 3.14159, 2.79253, 3.14159, 3.14159, 3.14159]
+
+# Home Position
+home_position: [0.0, -1.5708, 0.0, -1.5708, 0.0, 0.0]  # joint angles in radians
+
+# ROS Parameters
+ros:
+  action_server_timeout: 5.0
+  joint_state_timeout: 10.0
+  trajectory_execution_time: 3.0  # increased for more time for robot to move

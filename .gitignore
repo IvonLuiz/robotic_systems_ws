@@ -1,6 +1,8 @@
 build/
 install/
 log/
+results/
+models/
 
 compile_commands.json
 .clangd
@@ -9,4 +11,7 @@ compile_commands.json
 env/
 __pycache__/
 
-results/
+*.npz
+*.csv
+*.zip
+*.0
