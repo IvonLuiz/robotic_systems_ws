@@ -3,6 +3,7 @@ install/
 log/
 results/
 models/
+training_runs/
 
 compile_commands.json
 .clangd
