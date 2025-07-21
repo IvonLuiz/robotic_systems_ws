@@ -45,15 +45,22 @@ class UR5Env(gym.Env, Node):
         self.config = RLConfig(config_file)
 
         # --- Gym Environment Setup ---
+        self.joint_limits_lower = np.array(self.config.get('joint_limits.lower', [-np.pi] * 6))
+        self.joint_limits_upper = np.array(self.config.get('joint_limits.upper', [np.pi] * 6))
+        target_vector_low = np.array([-2.0, -2.0, -2.0])
+        target_vector_high = np.array([2.0, 2.0, 2.0])
+        target_position_low = np.array([-1.0, -1.0, -1.0])
+        target_position_high = np.array([1.0, 1.0, 1.0])
+
         # Action: 6 joint velocities [-1.0, 1.0] rad/s scaled by action_scale
         action_scale = self.config.get('environment.action_scale', 1.0)
         action_low = np.array([-action_scale] * 6, dtype=np.float32)
         action_high = np.array([action_scale] * 6, dtype=np.float32)
         self.action_space = spaces.Box(low=action_low, high=action_high)
 
-        # Observation: 6 joint angles + 3 (vector to target)
-        obs_low = np.array([-np.inf] * 9, dtype=np.float32)
-        obs_high = np.array([np.inf] * 9, dtype=np.float32)
+        # Observation: 6 (joint angles) + 3 (vector to target) + 3 (target position)
+        obs_low = np.concatenate([self.joint_limits_lower, target_vector_low, target_position_low])
+        obs_high = np.concatenate([self.joint_limits_upper, target_vector_high, target_position_high])
         self.observation_space = spaces.Box(low=obs_low, high=obs_high)
 
         # --- ROS 2 Communication Setup ---
@@ -105,8 +112,6 @@ class UR5Env(gym.Env, Node):
         # Get configured parameters
         self.dt = self.config.get('environment.dt', 0.1)
         self.goal_tolerance = self.config.get('environment.goal_tolerance', 0.05)
-        self.joint_limits_lower = np.array(self.config.get('joint_limits.lower', [-np.pi] * 6))
-        self.joint_limits_upper = np.array(self.config.get('joint_limits.upper', [np.pi] * 6))
         self.home_position = self.config.get('home_position', [0, -np.pi/2, 0.01, -np.pi/2, 0.01, 0.01])
         
         # Reward parameters
@@ -211,10 +216,9 @@ class UR5Env(gym.Env, Node):
         new_target_angles = current_angles + action * dt
 
         # Clip to joint limits
-        #print if new targets surpassed limits
-        #if np.any(new_target_angles < self.joint_limits_lower) or np.any(new_target_angles > self.joint_limits_upper):
-        #    self.get_logger().warn(f"New target angles {new_target_angles} exceeded joint limits {self.joint_limits_lower} - {self.joint_limits_upper}")
-        #new_target_angles = np.clip(new_target_angles, self.joint_limits_lower, self.joint_limits_upper)
+        if np.any(new_target_angles < self.joint_limits_lower) or np.any(new_target_angles > self.joint_limits_upper):
+            self.get_logger().warn(f"New target angles {new_target_angles} exceeded joint limits {self.joint_limits_lower} - {self.joint_limits_upper}", throttle_duration_sec=2.0)
+        new_target_angles = np.clip(new_target_angles, self.joint_limits_lower, self.joint_limits_upper)
 
         self.get_logger().debug(f"Step {self.episode_step_count}")
         self.get_logger().debug(f"Action: {action}")
@@ -227,11 +231,13 @@ class UR5Env(gym.Env, Node):
         # 2. Get New Observation after trajectory completion
         observation = self._get_observation()
         if observation is None:
+            # very unlikely to happen, but checking just in case
             reward = 0
             terminated = False
             truncated = True
             return self.observation_space.sample(), reward, terminated, truncated, {"error": "Failed to get observation"}
         if not result:
+            # trajectory execution usually fail due to hitting the ground or itself
             reward = -1000
             terminated = False
             truncated = True
@@ -343,18 +349,20 @@ class UR5Env(gym.Env, Node):
     def _get_observation(self):
         joint_angles = self._get_current_joint_state()
         ee_transform = self.get_end_effector_pose()
+        target_position = self.target_position
         self.get_logger().debug("Getting observation...")
 
-        if joint_angles is None or ee_transform is None:
+        if joint_angles is None or ee_transform is None or target_position is None:
+            # this is very unlikely, but just in case
             self.get_logger().warn("Could not get complete observation.")
             return None
 
         self.get_logger().debug(f"Joint Angles: {joint_angles}, End Effector Pose: {ee_transform}")
 
         ee_pos = ee_transform[:3]
-        vector_to_target = self.target_position - ee_pos
+        vector_to_target = target_position - ee_pos
 
-        return np.concatenate([joint_angles, vector_to_target]).astype(np.float32)
+        return np.concatenate([joint_angles, vector_to_target, target_position]).astype(np.float32)
 
     def _generate_random_target(self):
         """
@@ -491,66 +499,6 @@ class UR5Env(gym.Env, Node):
         self.destroy_node()
 
 
-def get_algorithm_class(algorithm_name):
-    """
-    Get the appropriate algorithm class based on the algorithm name.
-    
-    Supported algorithms for UR5 robot reaching tasks:
-    
-    CONTINUOUS CONTROL ALGORITHMS (Recommended for robotic manipulation):
-    - SAC (Soft Actor-Critic): Off-policy, sample efficient, handles continuous actions well
-    - TD3 (Twin Delayed DDPG): Off-policy, deterministic, good for robotic control
-    - DDPG (Deep Deterministic Policy Gradient): Off-policy, deterministic, predecessor to TD3
-    - PPO (Proximal Policy Optimization): On-policy, stable, good general performance
-    - A2C (Advantage Actor-Critic): On-policy, simpler than PPO, faster training
-    
-    ALGORITHM RECOMMENDATIONS FOR UR5 REACHING:
-    1. SAC - Best overall choice: sample efficient, stable, handles exploration well
-    2. TD3 - Good for deterministic control, robust to hyperparameters
-    4. PPO - Stable and reliable, good for beginners
-    5. DDPG - Simple but can be unstable
-    6. A2C - Fast training but less stable than PPO
-    
-    Args:
-        algorithm_name: String name of the algorithm
-        
-    Returns:
-        Algorithm class from stable-baselines3
-    """
-    algorithms = {
-        'SAC': SAC,
-        'TD3': TD3,
-        'DDPG': DDPG,
-        'PPO': PPO,
-        'A2C': A2C,
-    }
-    
-    if algorithm_name not in algorithms:
-        available_algs = list(algorithms.keys())
-        raise ValueError(f"Algorithm '{algorithm_name}' not supported. Available algorithms: {available_algs}")
-    
-    return algorithms[algorithm_name]
-
-
-def validate_algorithm_for_environment(algorithm_name, action_space):
-    """
-    Validate that the chosen algorithm is compatible with the environment.
-    
-    Args:
-        algorithm_name: String name of the algorithm
-        action_space: Gymnasium action space
-        
-    Returns:
-        bool: True if compatible, raises ValueError if not
-    """
-    continuous_algorithms = ['SAC', 'TD3', 'DDPG', 'PPO', 'A2C']
-    
-    if algorithm_name in continuous_algorithms and isinstance(action_space, spaces.Discrete):
-        print(f"Warning: {algorithm_name} is designed for continuous control but environment has discrete action space.")
-    
-    return True
-
-
 def main():
     rclpy.init()
     config = RLConfig()
@@ -563,9 +511,9 @@ def main():
 
     # --- 1. Check the environment ---
     # It will display warnings if something is wrong
-    #print("Checking environment...")
-    #check_env(env)
-    #print("Environment check passed!")
+    print("Checking environment...")
+    check_env(env)
+    print("Environment check passed!")
 
     # --- 2. Import and setup the trainer ---
     from .trainer import UR5Trainer, NETWORK_CONFIGS
@@ -575,7 +523,7 @@ def main():
     algorithm_name = config.get('model.algorithm', 'SAC')
     custom_network_config = NETWORK_CONFIGS.get(network_type, NETWORK_CONFIGS['medium'])
     
-    # Create trainer with custom network
+    # Create trainer
     trainer = UR5Trainer(env, config, custom_network_config)
     
     # Check if we should load a pre-trained model
