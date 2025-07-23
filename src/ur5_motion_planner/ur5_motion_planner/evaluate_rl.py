@@ -72,7 +72,7 @@ def evaluate_model(model_path, episodes=10):
     for r in results:
         print(f"Ep {r['episode']}: Distance = {r['final_distance']:.4f} m | Steps = {r['steps']}")
 
-    csv_filename = "evaluation_results.csv"
+    csv_filename = "rl_evaluation_results.csv"
     df = pd.DataFrame([{
         "episode": r["episode"],
         "target_x": r["target"][0],
