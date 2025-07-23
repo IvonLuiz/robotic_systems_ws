@@ -40,6 +40,7 @@ setup(
             "dataset_generator_node = ur5_motion_planner.dataset_generator_node:main",
             "env_node = ur5_motion_planner.env_node:main",
             "evaluate = ur5_motion_planner.evaluate:main",
+            "evaluate_ik = ur5_motion_planner.evaluate_ik:main",
         ],
     },
 )

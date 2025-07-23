@@ -1,6 +1,6 @@
-# UR Arm Pick and Place Project
+# UR5 Arm - Reinforcement Learning x Inverse Kinematics
 
-This project provides a Dockerized environment for working with a Universal Robots (UR) arm in a ROS 2-based pick-and-place application. The container can be built for any supported ROS 2 distribution, as long as OSRF provides a base image and compatible packages for it.
+This project explores the use of Reinforcement Learning versus Inverse Kinematics for controlling a UR5 robotic arm in a ROS 2-based application. It provides a fully Dockerized environment, enabling easy deployment and experimentation with ROS 2 Jazzy. The goal is to compare the performance, flexibility, and practicality of each control strategy in a realistic robotic scenario.
 
 ## Prerequisites
 
@@ -9,16 +9,19 @@ This project provides a Dockerized environment for working with a Universal Robo
   - `jazzy`
 
 ## Development
+
 ### Setup URSim for simulation with docker
 
 The documentation for this steps are on: [reference](https://docs.universal-robots.com/Universal_Robots_ROS2_Documentation/doc/ur_client_library/doc/setup/ursim_docker.html).
 
 In an separated secondary terminal, we will create a dedicated docker network.
+
 ```bash
 docker network create --subnet=192.168.56.0/24 --driver bridge ursim-net
 ```
 
 Start URSim Container
+
 ```bash
 docker run --rm -it \
   --name ursim \
@@ -30,6 +33,7 @@ docker run --rm -it \
 ```
 
 to open other terminal:
+
 ```bash
 docker exec -it ur_ros2_dev_jazzy bash
 ```
@@ -50,6 +54,7 @@ bash run_container.sh
 ```
 
 to open other terminal:
+
 ```bash
 docker exec -it ur_ros2_dev_jazzy bash
 ```
@@ -62,7 +67,7 @@ Inside the container:
 
 ```bash
 colcon build --base-path src
-source install/setup.bash 
+source install/setup.bash
 ```
 
 ### Local Setup
@@ -84,26 +89,31 @@ colcon build --base-path src
 ## Working
 
 ## New terminal setup
+
 Remember to always source when using a new terminal (on container or not):
 
 ```bash
-source install/setup.bash 
+source install/setup.bash
 ```
 
 ### Inverse kinematics
+
 Our IK motion planner implementation can be run by launching the simulation and the script:
 
 In one terminal:
+
 ```bash
 ros2 launch gazebo_control ur_sim_control.launch.py
 ```
 
 In a second separate terminal
+
 ```bash
 ros2 run ur5_motion_planner ik_motion_planner
 ```
 
 to send a pose modify the example:
+
 ```bash
 ros2 topic pub --once /pose_list geometry_msgs/msg/Pose "{
   position: {x: 0.675, y: 0.122, z: 0.3475},
@@ -112,19 +122,23 @@ ros2 topic pub --once /pose_list geometry_msgs/msg/Pose "{
 ```
 
 ### Machine Learning
+
 #### Dataset generation
 
 To generate a certain dataset size, we will also start the simulation and the script. The dataset_generator_node will make random movinments to the robot and save the end effector position and the angles that made the moviments.
 
 In one terminal:
+
 ```bash
 ros2 launch gazebo_control ur_sim_control.launch.py
 ```
 
 In a second separate terminal:
+
 ```bash
 ros2 run ur5_motion_planner dataset_generator_node --num-points 10000 --angle-step 45
 ```
+
 The parameters can be changed accordingly, or left as default (1000 steps and 45 degrees).
 Note: the random angle step used in the code will be from [-angle_step, +angle_step].
 
@@ -133,23 +147,25 @@ Note: the random angle step used in the code will be from [-angle_step, +angle_s
 To train a custom model, one can change the parameters inside the [config file](src/ur5_motion_planner/config/rl_config.yaml). The default 'total_timesteps' is very large, but can be changed for testing. Also, different STB3 algorithms ad available to be used.
 
 To train the model, we do the same procedure as before to launch the simulation:
+
 ```bash
 ros2 launch gazebo_control ur_sim_control.launch.py
 ```
 
 And on another terminal:
+
 ```bash
 ros2 run ur5_motion_planner env_node
 ```
 
 To visualize the target marker, you need to activate it on RViz by following the step by step:
+
 - on the bottom left click on add
 - select the "By topic" tab
 - during training, there will be an option "/target_marker"
 - select the "Marker" under it, represented by a a green cube
 
 ![Robot training with marker](docs/images/robot_training_with_marker.png)
-
 
 ## Running Validator
 

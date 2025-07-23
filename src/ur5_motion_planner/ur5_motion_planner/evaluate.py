@@ -3,6 +3,7 @@ import numpy as np
 import os
 import time
 import argparse
+import pandas as pd
 
 from stable_baselines3 import SAC, TD3, DDPG, PPO, A2C
 
@@ -12,11 +13,9 @@ from .config_loader import RLConfig
 def evaluate_model(model_path, episodes=10):
     rclpy.init()
 
-    # Carregar configuração e ambiente
     config = RLConfig()
     env = UR5Env()
 
-    # Determinar algoritmo
     algorithm_name = config.get('model.algorithm', 'SAC')
     algorithms = {
         'SAC': SAC,
@@ -31,7 +30,6 @@ def evaluate_model(model_path, episodes=10):
 
     AlgorithmClass = algorithms[algorithm_name]
 
-    # Carregar modelo
     if not os.path.exists(model_path):
         raise FileNotFoundError(f"Model file not found: {model_path}")
 
@@ -42,7 +40,7 @@ def evaluate_model(model_path, episodes=10):
 
     for ep in range(episodes):
         obs, _ = env.reset()
-        target_position = env.target_position.copy()  # Salvar alvo para análise
+        target_position = env.target_position.copy()
         done = False
         steps = 0
 
@@ -68,11 +66,27 @@ def evaluate_model(model_path, episodes=10):
             "steps": steps
         })
 
-        time.sleep(1.0)  # Pequena pausa entre episódios
+        time.sleep(1.0)
 
     print("\n=== Evaluation Summary ===")
     for r in results:
         print(f"Ep {r['episode']}: Distance = {r['final_distance']:.4f} m | Steps = {r['steps']}")
+
+    csv_filename = "evaluation_results.csv"
+    df = pd.DataFrame([{
+        "episode": r["episode"],
+        "target_x": r["target"][0],
+        "target_y": r["target"][1],
+        "target_z": r["target"][2],
+        "final_x": r["final_position"][0],
+        "final_y": r["final_position"][1],
+        "final_z": r["final_position"][2],
+        "final_distance": r["final_distance"],
+        "steps": r["steps"]
+    } for r in results])
+
+    df.to_csv(csv_filename, index=False)
+    print(f"\n📁 Resultados salvos em: {csv_filename}")
 
     rclpy.shutdown()
 

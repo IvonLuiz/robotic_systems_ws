@@ -279,7 +279,10 @@ class IKMotionPlanner(Node):
 
         # theta1
         psi = math.atan2(P_05[1, 0], P_05[0, 0])
-        phi = math.acos(self.d4 / math.sqrt(P_05[1, 0] ** 2 + P_05[0, 0] ** 2))
+        denominator = math.sqrt(P_05[1, 0] ** 2 + P_05[0, 0] ** 2)
+        ratio = self.clamp(self.d4 / denominator)
+        phi = math.acos(ratio)
+
 
         th[0, 0:4] = math.pi / 2 + psi + phi
         th[0, 4:8] = math.pi / 2 + psi - phi
@@ -289,8 +292,10 @@ class IKMotionPlanner(Node):
         for c in [0, 4]:
             T_10 = np.linalg.inv(self.AH(1, th, c))
             T_16 = T_10 @ desired_pos
-            th[4, c : c + 2] = +math.acos((T_16[2, 3] - self.d4) / self.d6)
-            th[4, c + 2 : c + 4] = -math.acos((T_16[2, 3] - self.d4) / self.d6)
+            value = self.clamp((T_16[2, 3] - self.d4) / self.d6)
+            th[4, c : c + 2] = +math.acos(value)
+            th[4, c + 2 : c + 4] = -math.acos(value)
+
 
         th = th.real
 
