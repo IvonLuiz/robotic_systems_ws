@@ -238,11 +238,11 @@ class UR5Env(gym.Env, Node):
             return self.observation_space.sample(), reward, terminated, truncated, {"error": "Failed to get observation"}
         if not result:
             # trajectory execution usually fail due to hitting the ground or itself
-            reward = -1000
+            reward = -200
             terminated = False
             truncated = True
-            self.get_logger().error("Penalizing step with -1000 reward and resetting.")
-            return observation, reward, terminated, truncated, {"error": "Failed to send trajectory goal. Penalizing step with -1000 reward and resetting."}
+            self.get_logger().error(f"Penalizing step with {reward} reward and resetting.")
+            return observation, reward, terminated, truncated, {"error": f"Failed to send trajectory goal. Penalizing step with {reward} reward and resetting."}
 
         # 3. Calculate Reward
         reward, terminated = self.calculate_reward()
@@ -282,21 +282,26 @@ class UR5Env(gym.Env, Node):
         # 1)
         # reward = scale * (e^(steepness * (threshold - distance)) - 1)
         # `self.reward_threshold`: negative when farther, and positive when closer.
-        distance_reward = self.distance_penalty_scale * \
-            (np.exp(self.distance_reward_steepness * (self.reward_threshold - curr_target_dist)) - 1)
+        #distance_reward = self.distance_penalty_scale * \
+        #    (np.exp(self.distance_reward_steepness * (self.reward_threshold - curr_target_dist)) - 1)
+        if curr_target_dist is not None:
+            distance_reward = -self.distance_penalty_scale * np.power(curr_target_dist, 2)  # Using squared distance for a smoother penalty
+        else:
+            self.get_logger().warn("Current target distance is None, setting distance_reward to 0.")
+            distance_reward = 0
         reward += distance_reward
 
         # 2)
-        if self.last_target_dist is not None:
-            # this value is positive when getting closer, negative otherwise
-            improvement = self.last_target_dist - curr_target_dist
-            reward += self.closer_reward_scale * improvement
-        self.last_target_dist = curr_target_dist
+        #if self.last_target_dist is not None:
+        #    # this value is positive when getting closer, negative otherwise
+        #    improvement = self.last_target_dist - curr_target_dist
+        #    reward += self.closer_reward_scale * improvement
+        #self.last_target_dist = curr_target_dist
 
         # 3)
-        if self.episode_step_count > 0:
-            # penalize for taking too many steps to encourage efficiency
-            reward -= 0.01 * self.episode_step_count
+        #if self.episode_step_count > 0:
+        #    # penalize for taking too many steps to encourage efficiency
+        #    reward -= 0.001 * self.episode_step_count
 
         # 4)
         if curr_target_dist < self.goal_tolerance:
@@ -305,8 +310,6 @@ class UR5Env(gym.Env, Node):
 
         self.get_logger().info(
             f"Dist: {curr_target_dist:.3f}, "
-            f"ExpReward: {distance_reward:.3f}, "
-            f"Improv: {improvement:.3f}, "
             f"TotalReward: {reward:.3f}",
             throttle_duration_sec=1
         )
@@ -398,10 +401,10 @@ class UR5Env(gym.Env, Node):
             y = radius * np.sin(phi) * np.sin(theta)
             z = radius * np.cos(phi)
             
-            # Add base height offset if specified
+            # limit the z coordinate to avoid unreachable poses
             z_offset = bounds.get('z_offset', 0.0)
-            z += z_offset
-            
+            z = min(z, z_offset)
+
         else:
             # Default: Cartesian coordinate sampling within defined workspace bounds
             x = np.random.uniform(bounds.get('x_min', -0.21), bounds.get('x_max', 0.2))
